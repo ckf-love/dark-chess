@@ -436,6 +436,11 @@ class Game {
             return count === 1 && (dr === 0 || dc === 0);
         }
 
+        // 兵/卒的埋伏(夾擊)吃子
+        if (piece.type === '兵' && (dr + dc === 1) && !this.compareRank(piece, target)) {
+            if (this.checkAmbush(to, piece.side)) return true;
+        }
+
         // 一般等級壓制
         if (dr + dc === 1) {
             return this.compareRank(piece, target);
@@ -812,13 +817,13 @@ class Game {
                 bestMove = this.getRandomMove();
                 break;
             case 'amateur':
-                bestMove = this.getMinimaxMove(1);
+                bestMove = this.getSmartMove(2);
                 break;
             case 'pro':
-                bestMove = this.getMinimaxMove(3);
+                bestMove = this.getSmartMove(4);
                 break;
             case 'god':
-                bestMove = this.getMinimaxMove(4); // 降低到 4 層以確保效能與穩定
+                bestMove = this.getSmartMove(5);
                 break;
         }
 
@@ -835,7 +840,11 @@ class Game {
     getRandomMove() {
         const moves = this.getAllValidMoves('black');
         const unflipped = this.getUnflippedIndices();
-        
+        // 新手也會優先吃子
+        const captures = moves.filter(m => this.board[m.to] !== null);
+        if (captures.length > 0 && Math.random() > 0.4) {
+            return { type: 'move', ...captures[Math.floor(Math.random() * captures.length)] };
+        }
         if (unflipped.length > 0 && Math.random() > 0.3) {
             return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
         }
@@ -848,22 +857,25 @@ class Game {
         return null;
     }
 
-    getMinimaxMove(depth) {
+    getSmartMove(depth) {
         let bestScore = -Infinity;
         let bestMove = null;
         
         const moves = this.getAllValidMoves('black');
         const unflipped = this.getUnflippedIndices();
 
-        // 1. 如果完全沒棋可走，必翻棋
+        // 如果完全沒棋可走，必翻棋
         if (moves.length === 0 && unflipped.length > 0) {
             return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
         }
 
-        // 2. 評估所有走法
-        moves.forEach(move => {
+        // 走法排序：優先評估吃子走法，提高 alpha-beta 剪枝效率
+        const sortedMoves = this.orderMoves(moves, 'black');
+
+        // 評估所有走法
+        for (const move of sortedMoves) {
             const originalBoard = JSON.parse(JSON.stringify(this.board));
-            this.simulateMove(move.from, move.to);
+            this.simulateCapture(move.from, move.to);
             let score = this.minimax(depth - 1, -Infinity, Infinity, false);
             this.board = originalBoard;
 
@@ -871,19 +883,32 @@ class Game {
                 bestScore = score;
                 bestMove = { type: 'move', ...move };
             }
-        });
+        }
 
-        // 3. 翻棋決策：
-        // 如果沒有找到任何移動，或最好的移動評分太低
-        const flipThreshold = 100; 
+        // 翻棋決策 (更聰明)
         if (unflipped.length > 0) {
-            // 如果連一個移動都沒找到，或者最好的移動真的很爛，就翻棋
-            if (!bestMove || bestScore < flipThreshold || Math.random() < 0.1) {
+            // 計算我方已翻開棋子數
+            const myFlipped = this.board.filter(p => p && p.side === 'black' && p.isFlipped).length;
+            const enemyFlipped = this.board.filter(p => p && p.side === 'red' && p.isFlipped).length;
+            
+            // 情況1：沒有找到任何移動
+            if (!bestMove) {
+                return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
+            }
+            
+            // 情況2：我方場上棋子太少，需要翻更多出來
+            if (myFlipped <= 2 && unflipped.length > 0) {
+                return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
+            }
+
+            // 情況3：目前最佳走法評分很低（被動局面），試試翻棋
+            const flipThreshold = -50;
+            if (bestScore < flipThreshold && unflipped.length >= 4) {
                 return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
             }
         }
 
-        // 4. 保底：如果真的什麼都沒選到，強制翻棋或隨機走
+        // 保底
         if (!bestMove) {
             if (unflipped.length > 0) return { type: 'flip', index: unflipped[0] };
             if (moves.length > 0) return { type: 'move', ...moves[0] };
@@ -892,17 +917,48 @@ class Game {
         return bestMove;
     }
 
+    // 走法排序：吃子 > 威脅 > 普通移動，大幅提升剪枝效率
+    orderMoves(moves, side) {
+        return moves.map(m => {
+            let priority = 0;
+            const target = this.board[m.to];
+            const attacker = this.board[m.from];
+            if (target) {
+                // 吃子走法：用 MVV-LVA (Most Valuable Victim - Least Valuable Attacker)
+                priority = 1000 + PIECE_TYPES[target.type].value * 100 - PIECE_TYPES[attacker.type].value * 10;
+            } else {
+                // 移動到安全位置加分
+                if (!this.isPieceUnderThreatAt(m.to, side)) priority += 20;
+                // 移動到中心加分
+                const { r, c } = this.getRC(m.to);
+                priority += 10 - Math.abs(r - 3.5) - Math.abs(c - 1.5);
+            }
+            return { ...m, priority };
+        }).sort((a, b) => b.priority - a.priority);
+    }
+
     minimax(depth, alpha, beta, isMaximizing) {
-        if (depth === 0 || this.isGameOver) {
+        if (depth === 0) {
             return this.evaluateBoard();
         }
 
+        const side = isMaximizing ? 'black' : 'red';
+        const moves = this.getAllValidMoves(side);
+
+        // 無棋可走 = 極端劣勢
+        if (moves.length === 0) {
+            const myPieces = this.board.filter(p => p && p.side === side && p.isFlipped).length;
+            return isMaximizing ? (myPieces === 0 ? -99999 : this.evaluateBoard()) : (myPieces === 0 ? 99999 : this.evaluateBoard());
+        }
+
+        // 走法排序
+        const sortedMoves = this.orderMoves(moves, side);
+
         if (isMaximizing) {
             let maxEval = -Infinity;
-            const moves = this.getAllValidMoves('black');
-            for (let move of moves) {
+            for (let move of sortedMoves) {
                 const originalBoard = JSON.parse(JSON.stringify(this.board));
-                this.simulateMove(move.from, move.to);
+                this.simulateCapture(move.from, move.to);
                 let evaluation = this.minimax(depth - 1, alpha, beta, false);
                 this.board = originalBoard;
                 maxEval = Math.max(maxEval, evaluation);
@@ -912,10 +968,9 @@ class Game {
             return maxEval;
         } else {
             let minEval = Infinity;
-            const moves = this.getAllValidMoves('red');
-            for (let move of moves) {
+            for (let move of sortedMoves) {
                 const originalBoard = JSON.parse(JSON.stringify(this.board));
-                this.simulateMove(move.from, move.to);
+                this.simulateCapture(move.from, move.to);
                 let evaluation = this.minimax(depth - 1, alpha, beta, true);
                 this.board = originalBoard;
                 minEval = Math.min(minEval, evaluation);
@@ -928,35 +983,119 @@ class Game {
 
     evaluateBoard() {
         let score = 0;
+        let blackMobility = 0;
+        let redMobility = 0;
+        let blackPieceCount = 0;
+        let redPieceCount = 0;
+
         this.board.forEach((p, i) => {
             if (!p) return;
             if (!p.isFlipped) {
-                // 對於未翻開的棋子，給予微小的基礎分，鼓勵 AI 去翻
-                score += (p.side === 'black' ? 1 : -1);
+                score += (p.side === 'black' ? 2 : -2);
                 return;
             }
 
-            let val = PIECE_TYPES[p.type].value * 20;
-            if (p.isUpgraded) val += 30;
-            if (p.cooldown > 0) val -= 10;
-            if (p.type === '兵' && p.livesLeft > 0) val += 10;
+            const side = p.side;
+            if (side === 'black') blackPieceCount++; else redPieceCount++;
 
-            // 位置評估：佔據中心位置較佳
+            // === 基礎棋子價值 (使用更大的差距) ===
+            let val = PIECE_TYPES[p.type].value * 50;
+            
+            // === 升級加成 ===
+            if (p.isUpgraded) {
+                val += 40;
+                if (p.cooldown === 0) val += 15; // 技能可用更值錢
+            }
+            
+            // === 兵的額外命 ===
+            if (p.type === '兵' && p.livesLeft > 0) val += 20;
+
+            // === 位置評估 ===
             const { r, c } = this.getRC(i);
+            // 中心控制
             const distFromCenter = Math.abs(r - 3.5) + Math.abs(c - 1.5);
-            val += (5 - distFromCenter);
+            val += (8 - distFromCenter * 1.5);
+            
+            // 邊角懲罰（棋子容易被困）
+            if (c === 0 || c === BOARD_COLS - 1) val -= 3;
+            if (r === 0 || r === BOARD_ROWS - 1) val -= 2;
 
-            // 安全性評估：如果會被對方吃掉，大幅減分
-            if (this.isPieceUnderThreat(i, p.side)) {
-                val -= PIECE_TYPES[p.type].value * 15;
+            // === 安全性評估 ===
+            const underThreat = this.isPieceUnderThreatAt(i, side);
+            const isProtected = this.isPieceProtected(i, side);
+            
+            if (underThreat) {
+                if (isProtected) {
+                    // 被威脅但有保護：小幅減分
+                    val -= PIECE_TYPES[p.type].value * 8;
+                } else {
+                    // 被威脅且無保護：大幅減分
+                    val -= PIECE_TYPES[p.type].value * 25;
+                }
+            }
+            
+            if (isProtected && !underThreat) {
+                val += 5; // 安全且有保護加分
             }
 
-            score += (p.side === 'black' ? val : -val);
+            // === 機動性（能走多少步）===
+            let mobility = 0;
+            for (let j = 0; j < 32; j++) {
+                if (this.tryMovePreview(i, j)) mobility++;
+            }
+            val += mobility * 3;
+            if (side === 'black') blackMobility += mobility;
+            else redMobility += mobility;
+
+            // === 帥/將特殊評估：安全最重要 ===
+            if (p.type === '帥') {
+                if (underThreat) val -= 200; // 將帥被威脅是災難
+                // 周圍友軍越多越安全
+                const { r: kr, c: kc } = this.getRC(i);
+                let guardsNearby = 0;
+                for (let dr = -1; dr <= 1; dr++) {
+                    for (let dc = -1; dc <= 1; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        const nr = kr + dr, nc = kc + dc;
+                        if (nr >= 0 && nr < BOARD_ROWS && nc >= 0 && nc < BOARD_COLS) {
+                            const g = this.board[nr * BOARD_COLS + nc];
+                            if (g && g.side === side && g.isFlipped) guardsNearby++;
+                        }
+                    }
+                }
+                val += guardsNearby * 8;
+            }
+
+            // === 兵卒夾擊潛力 ===
+            if (p.type === '兵') {
+                const { r: sr, c: sc } = this.getRC(i);
+                const dirs = [{r:sr-1,c:sc},{r:sr+1,c:sc},{r:sr,c:sc-1},{r:sr,c:sc+1}];
+                let friendlySoldiersNearby = 0;
+                dirs.forEach(d => {
+                    if (d.r >= 0 && d.r < BOARD_ROWS && d.c >= 0 && d.c < BOARD_COLS) {
+                        const nb = this.board[d.r * BOARD_COLS + d.c];
+                        if (nb && nb.side === side && nb.type === '兵' && nb.isFlipped) {
+                            friendlySoldiersNearby++;
+                        }
+                    }
+                });
+                if (friendlySoldiersNearby >= 1) val += 15; // 兵靠近有夾擊潛力
+            }
+
+            score += (side === 'black' ? val : -val);
         });
+
+        // === 全局機動性差值 ===
+        score += (blackMobility - redMobility) * 2;
+
+        // === 棋子數差值加成 ===
+        score += (blackPieceCount - redPieceCount) * 15;
+
         return score;
     }
 
-    isPieceUnderThreat(index, side) {
+    // 檢查某格的棋子是否被威脅
+    isPieceUnderThreatAt(index, side) {
         const enemySide = side === 'red' ? 'black' : 'red';
         for (let i = 0; i < 32; i++) {
             const p = this.board[i];
@@ -967,20 +1106,37 @@ class Game {
         return false;
     }
 
-    simulateMove(from, to) {
-        // 使用更輕量的方式模擬，避免深拷貝整個對象
-        const attacker = this.board[from];
-        this.board[to] = attacker;
+    isPieceUnderThreat(index, side) {
+        return this.isPieceUnderThreatAt(index, side);
+    }
+
+    // 檢查某格的棋子是否有友軍保護（如果被吃，友軍能反吃）
+    isPieceProtected(index, side) {
+        const { r, c } = this.getRC(index);
+        const dirs = [{r:r-1,c:c},{r:r+1,c:c},{r:r,c:c-1},{r:r,c:c+1}];
+        for (const d of dirs) {
+            if (d.r >= 0 && d.r < BOARD_ROWS && d.c >= 0 && d.c < BOARD_COLS) {
+                const idx = d.r * BOARD_COLS + d.c;
+                const p = this.board[idx];
+                if (p && p.side === side && p.isFlipped && idx !== index) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 模擬吃子（正確移除被吃棋子）
+    simulateCapture(from, to) {
+        this.board[to] = this.board[from];
         this.board[from] = null;
     }
 
-    // 優化 getAllValidMoves，只檢查有意義的範圍
+    // 走法生成
     getAllValidMoves(side) {
         const moves = [];
         this.board.forEach((p, i) => {
             if (p && p.side === side && p.isFlipped) {
-                const { r, c } = this.getRC(i);
-                // 基礎移動：只檢查上下左右與對角線 (暗棋棋盤小，全查其實也還好，但可稍微限制)
                 for (let j = 0; j < 32; j++) {
                     if (this.tryMovePreview(i, j)) {
                         moves.push({ from: i, to: j });
