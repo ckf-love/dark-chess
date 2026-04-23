@@ -482,3 +482,34 @@ select {
 }
 
 .hidden { display: none !important; }
+
+/* 禁手警告彈窗 */
+.warning-modal {
+    border: 1px solid rgba(255, 180, 0, 0.5) !important;
+    box-shadow: 0 0 30px rgba(255, 165, 0, 0.3);
+    text-align: center;
+    animation: shake 0.4s ease;
+}
+
+.warning-icon {
+    font-size: 3rem;
+    line-height: 1;
+}
+
+.warning-modal h2 {
+    color: #ffb400;
+}
+
+.warning-modal p {
+    color: #ccc;
+    line-height: 1.8;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-10px); }
+    40% { transform: translateX(10px); }
+    60% { transform: translateX(-8px); }
+    80% { transform: translateX(8px); }
+}
+

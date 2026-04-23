@@ -27,6 +27,8 @@ class Game {
         this.captured = { red: [], black: [] };
         this.history = []; // 歷史紀錄堆疊
         this.isWaitingForAI = false;
+        this.recentMoves = []; // 追蹤最近棋步 (禁手規則)
+        this.audioContext = null; // 持久化音效上下文 (修復手機音效)
         
         this.init();
     }
@@ -152,7 +154,13 @@ class Game {
         document.getElementById('board').addEventListener('click', (e) => {
             const tile = e.target.closest('.tile');
             if (!tile) return;
+            // 手機音效修復：使用者第一次互動時恢復 AudioContext
+            this.resumeAudioContext();
             this.handleTileClick(parseInt(tile.dataset.index), true); // 標記為玩家手動點擊
+        });
+
+        document.getElementById('close-repetition').addEventListener('click', () => {
+            document.getElementById('repetition-modal').classList.add('hidden');
         });
 
         document.getElementById('guide-btn').addEventListener('click', () => {
@@ -264,21 +272,57 @@ class Game {
         // 基本規則檢查
         if (!this.isValidTarget(from, to)) return false;
 
+        // 禁手規則：同樣棋步不得連用超過 3 次
+        if (this.checkRepetition(from, to)) {
+            this.showRepetitionWarning(from, to);
+            return false;
+        }
+
         if (!target) {
             // 移動到空格
             if (this.canMoveToEmpty(from, to)) {
+                this.recordMove(from, to);
                 this.movePiece(from, to);
                 return true;
             }
         } else {
             // 吃子嘗試
             if (this.canCapture(from, to)) {
+                this.recordMove(from, to);
                 this.capturePiece(from, to);
                 return true;
             }
         }
 
         return false;
+    }
+
+    // 禁手：記錄棋步
+    recordMove(from, to) {
+        this.recentMoves.push(`${from}-${to}`);
+        // 只保留最近 20 步
+        if (this.recentMoves.length > 20) {
+            this.recentMoves.shift();
+        }
+    }
+
+    // 禁手：檢查是否重複超過 3 次
+    checkRepetition(from, to) {
+        const key = `${from}-${to}`;
+        const count = this.recentMoves.filter(m => m === key).length;
+        return count >= 3;
+    }
+
+    // 禁手：顯示警告彈窗
+    showRepetitionWarning(from, to) {
+        const modal = document.getElementById('repetition-modal');
+        modal.classList.remove('hidden');
+        // 重置動畫
+        const content = modal.querySelector('.modal-content');
+        content.style.animation = 'none';
+        requestAnimationFrame(() => {
+            content.style.animation = '';
+        });
     }
 
     isValidTarget(from, to) {
@@ -404,22 +448,25 @@ class Game {
         const attacker = this.board[from];
         const victim = this.board[to];
 
+        // 【BUG修復】先記錄升級前的狀態，避免 executeCapture 升級後誤觸重踏
+        const wasAlreadyUpgraded = attacker.isUpgraded;
+
         // 檢查是否使用了特殊技能吃子 (越級、跳躍、對角線)
         const isSpecialMove = this.isSpecialMove(from, to);
 
         // 兵/卒的特殊防禦：兩命機制
         if (victim.type === '兵' && victim.isUpgraded && victim.livesLeft > 0) {
-            this.handleSoldierRetreat(to);
-            if (attacker.isUpgraded && isSpecialMove) attacker.cooldown = 2; 
-            return; 
+            this.handleSoldierRetreat(from, to); // 傳入 from 讓攻擊方補位
+            if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
+            return;
         }
 
         // 執行吃子
         this.executeCapture(from, to);
-        if (attacker.isUpgraded && isSpecialMove) attacker.cooldown = 2;
+        if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
 
-        // 相/象的重踏技能：連帶吃掉後方棋子
-        if (attacker.isUpgraded && attacker.type === '相' && attacker.cooldown === 0) {
+        // 相/象的重踏技能：必須是吃子前就已升級才能觸發 (修復第一次吃子誤觸BUG)
+        if (wasAlreadyUpgraded && attacker.type === '相' && attacker.cooldown === 0) {
             this.handleElephantTrample(from, to);
             attacker.cooldown = 2; // 重踏也是特殊技能
         }
@@ -464,31 +511,64 @@ class Game {
         this.checkWin();
     }
 
-    handleSoldierRetreat(index) {
+    handleSoldierRetreat(from, index) {
+        // from = 攻擊方位置, index = 兵/卒位置
+        const attacker = this.board[from];
         const victim = this.board[index];
         const { r, c } = this.getRC(index);
         const neighbors = [
             {r: r-1, c: c}, {r: r+1, c: c}, {r: r, c: c-1}, {r: r, c: c+1}
         ];
-        
+
+        // 找出空格 (排除攻擊方目前佔用的格子，因為它即將移走)
         const emptySlots = neighbors.filter(n => {
             if (n.r < 0 || n.r >= BOARD_ROWS || n.c < 0 || n.c >= BOARD_COLS) return false;
-            return this.board[n.r * BOARD_COLS + n.c] === null;
+            const nIdx = n.r * BOARD_COLS + n.c;
+            // 攻擊方的格子即將空出，可作為退路
+            return this.board[nIdx] === null || nIdx === from;
         });
 
         if (emptySlots.length > 0) {
             const escape = emptySlots[Math.floor(Math.random() * emptySlots.length)];
-            const targetIdx = escape.r * BOARD_COLS + escape.c;
-            this.board[targetIdx] = victim;
-            this.board[index] = null;
+            const escapeIdx = escape.r * BOARD_COLS + escape.c;
+
+            // 1. 兵後退到逃脫格
+            this.board[escapeIdx] = victim;
             victim.livesLeft--;
+
+            // 2. 攻擊方補位到兵的原始格子
+            this.board[index] = attacker;
+            this.board[from] = null;
+
             this.playSound('move');
-            alert('兵卒觸發【難纏】：撤退一格！');
+            // 使用非阻塞的提示浮層
+            this.showToast('兵卒觸發【難纏】：撤退一格！攻擊方補位！');
             this.renderBoard();
         } else {
             // 無路可退，直接死亡
-            this.executeCapture(this.selectedTile, index);
+            this.executeCapture(from, index);
         }
+    }
+
+    // 輕量提示 (取代 alert，不阻塞遊戲)
+    showToast(msg) {
+        let toast = document.getElementById('game-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'game-toast';
+            toast.style.cssText = `
+                position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+                background: rgba(0,0,0,0.85); color: #ffd700; padding: 12px 24px;
+                border-radius: 12px; font-size: 1rem; font-weight: 600;
+                border: 1px solid rgba(255,215,0,0.4); z-index: 200;
+                pointer-events: none; transition: opacity 0.3s ease;
+            `;
+            document.body.appendChild(toast);
+        }
+        toast.innerText = msg;
+        toast.style.opacity = '1';
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
     }
 
     handleElephantTrample(from, to) {
@@ -597,51 +677,82 @@ class Game {
         }
     }
 
-    // 音效播放 (暫時使用模擬音效)
+    // ===== 音效系統 (手機修復版) =====
+    // 使用單一持久 AudioContext，解決 iOS/Android 限制每頁面 AudioContext 數量的問題
+    getAudioContext() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        // 手機端：瀏覽器可能在背景時 suspend AudioContext，需主動 resume
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+        return this.audioContext;
+    }
+
+    resumeAudioContext() {
+        // 在使用者互動時觸發，確保 AudioContext 已啟動 (iOS 強制要求)
+        const ctx = this.getAudioContext();
+        if (ctx.state === 'suspended') ctx.resume();
+    }
+
     playSound(type) {
-        console.log('Playing sound:', type);
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        
-        const now = ctx.currentTime;
-        
-        switch(type) {
-            case 'flip':
-                osc.frequency.setValueAtTime(400, now);
-                osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
-                gain.gain.setValueAtTime(0.1, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
-                osc.start(now);
-                osc.stop(now + 0.2);
-                break;
-            case 'move':
-                osc.frequency.setValueAtTime(300, now);
-                gain.gain.setValueAtTime(0.05, now);
-                gain.gain.linearRampToValueAtTime(0, now + 0.1);
-                osc.start(now);
-                osc.stop(now + 0.1);
-                break;
-            case 'capture':
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(200, now);
-                osc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
-                gain.gain.setValueAtTime(0.1, now);
-                gain.gain.linearRampToValueAtTime(0, now + 0.3);
-                osc.start(now);
-                osc.stop(now + 0.3);
-                break;
-            case 'upgrade':
-                osc.frequency.setValueAtTime(523.25, now); // C5
-                osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.5);
-                gain.gain.setValueAtTime(0.1, now);
-                gain.gain.linearRampToValueAtTime(0, now + 0.5);
-                osc.start(now);
-                osc.stop(now + 0.5);
-                break;
+        try {
+            const ctx = this.getAudioContext();
+            if (ctx.state === 'suspended') return; // 還未被使用者互動解鎖，靜默跳過
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            const now = ctx.currentTime;
+
+            switch(type) {
+                case 'flip':
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                    break;
+                case 'move':
+                    osc.frequency.setValueAtTime(300, now);
+                    gain.gain.setValueAtTime(0.05, now);
+                    gain.gain.linearRampToValueAtTime(0, now + 0.1);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                    break;
+                case 'capture':
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(200, now);
+                    osc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                    break;
+                case 'upgrade':
+                    osc.frequency.setValueAtTime(523.25, now); // C5
+                    osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.5);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                    break;
+                case 'select':
+                    osc.frequency.setValueAtTime(500, now);
+                    gain.gain.setValueAtTime(0.03, now);
+                    gain.gain.linearRampToValueAtTime(0, now + 0.08);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                    break;
+            }
+        } catch(e) {
+            // 音效失敗時靜默降級，不影響遊戲
+            console.warn('Sound playback failed:', e);
         }
     }
 

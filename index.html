@@ -66,6 +66,16 @@
             </aside>
         </main>
 
+        <!-- 重複棋步警告彈窗 -->
+        <div id="repetition-modal" class="modal hidden">
+            <div class="modal-content warning-modal">
+                <div class="warning-icon">⚠️</div>
+                <h2>禁手警告</h2>
+                <p id="repetition-msg">同樣的棋步已連續使用 3 次！<br>不可再重複此棋步，請改走其他棋路。</p>
+                <button id="close-repetition" class="btn primary">我知道了</button>
+            </div>
+        </div>
+
         <!-- 設定彈窗 -->
         <div id="settings-modal" class="modal hidden">
             <div class="modal-content">
