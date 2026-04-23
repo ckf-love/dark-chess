@@ -13,6 +13,37 @@
             <h1>神話暗棋 <span class="subtitle">升級覺醒</span></h1>
         </header>
 
+        <!-- 自訂測試棋盤頁面 -->
+        <section id="sandbox-page" class="hidden">
+            <div class="sandbox-header">
+                <button id="back-from-sandbox" class="btn secondary">← 返回遊戲</button>
+                <h2>🧪 自訂測試棋盤</h2>
+                <button id="clear-sandbox" class="btn secondary">清空棋盤</button>
+            </div>
+            <div class="sandbox-layout">
+                <div class="sandbox-palette">
+                    <div class="palette-section">
+                        <div class="palette-side-label red-label">🔴 紅方</div>
+                        <div class="palette-pieces" id="red-palette"></div>
+                    </div>
+                    <div class="palette-divider"></div>
+                    <div class="palette-section">
+                        <div class="palette-side-label black-label">⚫ 黑方</div>
+                        <div class="palette-pieces" id="black-palette"></div>
+                    </div>
+                    <div class="palette-tools">
+                        <button id="palette-eraser" class="btn secondary">🗑️ 橡皮擦</button>
+                        <button id="sandbox-load-game" class="btn primary">▶ 載入至主遊戲</button>
+                    </div>
+                    <div class="palette-hint">
+                        <p>左鍵：放置 / 再點移除</p>
+                        <p>右鍵：切換升級狀態 ✨</p>
+                    </div>
+                </div>
+                <div id="sandbox-board" class="board"></div>
+            </div>
+        </section>
+
         <!-- 玩法說明頁面 (預設隱藏) -->
         <section id="guide-page" class="hidden">
             <div class="guide-header">
@@ -48,6 +79,7 @@
                 <div class="controls">
                     <button id="undo-btn" class="btn primary">悔棋</button>
                     <button id="guide-btn" class="btn secondary">玩法說明</button>
+                    <button id="sandbox-btn" class="btn secondary">🧪 測試棋盤</button>
                     <button id="reset-btn" class="btn secondary">重新開始</button>
                     <button id="settings-btn" class="btn secondary">遊戲設定</button>
                 </div>
@@ -95,6 +127,13 @@
                         <option value="pro">職業</option>
                         <option value="god">神手</option>
                     </select>
+                </div>
+                <div class="setting-group">
+                    <label>音效</label>
+                    <label class="toggle-switch" id="sound-toggle-label">
+                        <input type="checkbox" id="sound-toggle" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
                 <button id="close-settings" class="btn primary">確定</button>
             </div>

@@ -29,6 +29,11 @@ class Game {
         this.isWaitingForAI = false;
         this.recentMoves = []; // 追蹤最近棋步 (禁手規則)
         this.audioContext = null; // 持久化音效上下文 (修復手機音效)
+        this.soundEnabled = true; // 音效開關
+        // 沙盒模式狀態
+        this.sandboxBoard = new Array(32).fill(null);
+        this.selectedPieceDef = null;
+        this.sandboxEraseMode = false;
         
         this.init();
     }
@@ -161,6 +166,47 @@ class Game {
 
         document.getElementById('close-repetition').addEventListener('click', () => {
             document.getElementById('repetition-modal').classList.add('hidden');
+        });
+
+        // 音效開關
+        document.getElementById('sound-toggle').addEventListener('change', (e) => {
+            this.soundEnabled = e.target.checked;
+        });
+
+        // 沙盒模式導航
+        document.getElementById('sandbox-btn').addEventListener('click', () => {
+            document.getElementById('main-game').classList.add('hidden');
+            document.getElementById('sandbox-page').classList.remove('hidden');
+            this.initSandbox();
+        });
+
+        document.getElementById('back-from-sandbox').addEventListener('click', () => {
+            document.getElementById('sandbox-page').classList.add('hidden');
+            document.getElementById('main-game').classList.remove('hidden');
+        });
+
+        document.getElementById('clear-sandbox').addEventListener('click', () => {
+            this.sandboxBoard = new Array(32).fill(null);
+            this.renderSandboxBoard();
+        });
+
+        document.getElementById('sandbox-load-game').addEventListener('click', () => {
+            if (confirm('確定將此棋盤載入主遊戲？（目前遊戲進度將被清除）')) {
+                // 深拷貝沙盒棋盤到主遊戲
+                this.board = JSON.parse(JSON.stringify(this.sandboxBoard));
+                this.turn = 'red';
+                this.isGameOver = false;
+                this.selectedTile = null;
+                this.history = [];
+                this.recentMoves = [];
+                this.captured = { red: [], black: [] };
+                document.getElementById('sandbox-page').classList.add('hidden');
+                document.getElementById('main-game').classList.remove('hidden');
+                this.renderBoard();
+                this.updateStatus();
+                this.updateGraveyard();
+                this.showToast('沙盒棋盤已載入！紅方先行。');
+            }
         });
 
         document.getElementById('guide-btn').addEventListener('click', () => {
@@ -1068,6 +1114,133 @@ class Game {
         if (this.guideTimers) {
             this.guideTimers.forEach(t => clearTimeout(t));
         }
+    }
+
+    // ===== 沙盒模式 =====
+    initSandbox() {
+        this.sandboxBoard = new Array(32).fill(null);
+        this.selectedPieceDef = null;
+        this.sandboxEraseMode = false;
+        this.renderPalette();
+        this.renderSandboxBoard();
+        this.setupSandboxEvents();
+    }
+
+    renderPalette() {
+        const allPieces = [
+            { type: '帥', side: 'red',   char: '帥' },
+            { type: '仕', side: 'red',   char: '仕' },
+            { type: '相', side: 'red',   char: '相' },
+            { type: '俥', side: 'red',   char: '俥' },
+            { type: '傌', side: 'red',   char: '傌' },
+            { type: '砲', side: 'red',   char: '砲' },
+            { type: '兵', side: 'red',   char: '兵' },
+            { type: '帥', side: 'black', char: '將' },
+            { type: '仕', side: 'black', char: '士' },
+            { type: '相', side: 'black', char: '象' },
+            { type: '俥', side: 'black', char: '車' },
+            { type: '傌', side: 'black', char: '馬' },
+            { type: '砲', side: 'black', char: '炮' },
+            { type: '兵', side: 'black', char: '卒' },
+        ];
+
+        ['red', 'black'].forEach(side => {
+            const container = document.getElementById(`${side}-palette`);
+            container.innerHTML = '';
+            allPieces.filter(p => p.side === side).forEach(p => {
+                const btn = document.createElement('div');
+                btn.className = `palette-piece ${p.side}`;
+                btn.dataset.type = p.type;
+                btn.dataset.side = p.side;
+                btn.dataset.char = p.char;
+                btn.innerText = p.char;
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.palette-piece').forEach(el => el.classList.remove('palette-selected'));
+                    document.getElementById('palette-eraser').classList.remove('active');
+                    this.sandboxEraseMode = false;
+                    this.selectedPieceDef = { type: p.type, side: p.side, char: p.char };
+                    btn.classList.add('palette-selected');
+                });
+                container.appendChild(btn);
+            });
+        });
+    }
+
+    renderSandboxBoard() {
+        const boardEl = document.getElementById('sandbox-board');
+        boardEl.innerHTML = '';
+        this.sandboxBoard.forEach((piece, index) => {
+            const tile = document.createElement('div');
+            tile.className = 'tile';
+            tile.dataset.index = index;
+            if (piece) {
+                const pieceEl = document.createElement('div');
+                pieceEl.className = `piece ${piece.side} flipped ${piece.isUpgraded ? 'upgraded' : ''}`;
+                const front = document.createElement('div');
+                front.className = 'piece-face piece-front';
+                front.innerText = piece.char + (piece.isUpgraded ? ' ✨' : '');
+                const back = document.createElement('div');
+                back.className = 'piece-face piece-back';
+                pieceEl.appendChild(front);
+                pieceEl.appendChild(back);
+                tile.appendChild(pieceEl);
+            }
+            boardEl.appendChild(tile);
+        });
+    }
+
+    setupSandboxEvents() {
+        const boardEl = document.getElementById('sandbox-board');
+        boardEl.onclick = (e) => {
+            const tile = e.target.closest('.tile');
+            if (!tile) return;
+            this.handleSandboxClick(parseInt(tile.dataset.index));
+        };
+        boardEl.oncontextmenu = (e) => {
+            e.preventDefault();
+            const tile = e.target.closest('.tile');
+            if (!tile) return;
+            const idx = parseInt(tile.dataset.index);
+            if (this.sandboxBoard[idx]) {
+                this.sandboxBoard[idx].isUpgraded = !this.sandboxBoard[idx].isUpgraded;
+                this.renderSandboxBoard();
+                this.showToast(this.sandboxBoard[idx].isUpgraded ? '已設為升級狀態 ✨' : '已取消升級狀態');
+            }
+        };
+        document.getElementById('palette-eraser').onclick = () => {
+            document.querySelectorAll('.palette-piece').forEach(el => el.classList.remove('palette-selected'));
+            this.selectedPieceDef = null;
+            this.sandboxEraseMode = true;
+            document.getElementById('palette-eraser').classList.add('active');
+        };
+    }
+
+    handleSandboxClick(idx) {
+        if (this.sandboxEraseMode) {
+            this.sandboxBoard[idx] = null;
+            this.renderSandboxBoard();
+            return;
+        }
+        if (!this.selectedPieceDef) {
+            this.showToast('請先從左方選板選擇一樣棋子');
+            return;
+        }
+        // 再點同一棋子則移除，否則放置
+        const existing = this.sandboxBoard[idx];
+        if (existing && existing.type === this.selectedPieceDef.type && existing.side === this.selectedPieceDef.side) {
+            this.sandboxBoard[idx] = null;
+        } else {
+            this.sandboxBoard[idx] = {
+                type: this.selectedPieceDef.type,
+                side: this.selectedPieceDef.side,
+                char: this.selectedPieceDef.char,
+                isFlipped: true,
+                isUpgraded: false,
+                cooldown: 0,
+                livesLeft: this.selectedPieceDef.type === '兵' ? 1 : 0
+            };
+        }
+        this.renderSandboxBoard();
     }
 }
 
