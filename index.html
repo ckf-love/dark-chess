@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神話暗棋：升級覺醒 (Mythic Dark Chess)</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700&family=Outfit:wght@300;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>神話暗棋 <span class="subtitle">升級覺醒</span></h1>
+        </header>
+
+        <!-- 玩法說明頁面 (預設隱藏) -->
+        <section id="guide-page" class="hidden">
+            <div class="guide-header">
+                <button id="back-to-game" class="btn secondary">← 返回遊戲</button>
+                <h2>棋子技能指南</h2>
+            </div>
+            
+            <div class="guide-content">
+                <!-- 這裡會由 JS 生成各棋子的動態教學卡片 -->
+                <div id="guide-list"></div>
+            </div>
+        </section>
+
+        <main id="main-game">
+            <div class="game-container">
+                <!-- 狀態顯示欄 -->
+                <div class="status-bar">
+                    <div id="turn-indicator" class="turn-red">
+                        <span class="indicator-dot"></span>
+                        <span class="turn-text">紅方回合</span>
+                    </div>
+                    <div class="game-info">
+                        <span id="game-mode-display">人 vs AI (業餘)</span>
+                    </div>
+                </div>
+
+                <!-- 棋盤區 -->
+                <div id="board" class="board">
+                    <!-- 棋子將由 JS 生成 -->
+                </div>
+
+                <!-- 底部控制區 -->
+                <div class="controls">
+                    <button id="undo-btn" class="btn primary">悔棋</button>
+                    <button id="guide-btn" class="btn secondary">玩法說明</button>
+                    <button id="reset-btn" class="btn secondary">重新開始</button>
+                    <button id="settings-btn" class="btn secondary">遊戲設定</button>
+                </div>
+            </div>
+
+            <!-- 側邊欄：吃子紀錄 (墳場) -->
+            <aside class="graveyard-container">
+                <div class="graveyard-section red-side">
+                    <h3>紅方戰利品</h3>
+                    <div id="red-captured" class="captured-list"></div>
+                </div>
+                <div class="graveyard-section black-side">
+                    <h3>黑方戰利品</h3>
+                    <div id="black-captured" class="captured-list"></div>
+                </div>
+            </aside>
+        </main>
+
+        <!-- 設定彈窗 -->
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2>遊戲設定</h2>
+                <div class="setting-group">
+                    <label>對戰模式</label>
+                    <select id="mode-select">
+                        <option value="pvp">人 vs 人 (同機)</option>
+                        <option value="pve" selected>人 vs AI</option>
+                    </select>
+                </div>
+                <div class="setting-group" id="ai-difficulty-group">
+                    <label>AI 難度</label>
+                    <select id="difficulty-select">
+                        <option value="novice">新手</option>
+                        <option value="amateur" selected>業餘</option>
+                        <option value="pro">職業</option>
+                        <option value="god">神手</option>
+                    </select>
+                </div>
+                <button id="close-settings" class="btn primary">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
