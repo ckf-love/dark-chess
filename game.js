@@ -70,22 +70,41 @@ class Game {
             alert('國士無雙模式開發中~ 敬請期待！');
         };
 
-        document.getElementById('sandbox-mode-btn').onclick = (e) => {
-            const now = Date.now();
-            if (!this._lastSandboxClick || now - this._lastSandboxClick > 500) {
-                this._sandboxClickCount = 0;
-            }
-            this._lastSandboxClick = now;
-            this._sandboxClickCount++;
+        const sandboxBtn = document.getElementById('sandbox-mode-btn');
+        let sandboxTimer = null;
 
-            if (this._sandboxClickCount >= 3) {
+        const startLongPress = (e) => {
+            // 防止右鍵觸發或多指觸發
+            if (e.type === 'mousedown' && e.button !== 0) return;
+            
+            sandboxTimer = setTimeout(() => {
                 this.showPage('sandbox-page');
                 this.initSandbox();
-                this._sandboxClickCount = 0; // 重置
-            } else {
+                sandboxTimer = null;
+            }, 2500);
+        };
+
+        const cancelLongPress = () => {
+            if (sandboxTimer) {
+                clearTimeout(sandboxTimer);
+                sandboxTimer = null;
+                // 如果長按未滿 2.5 秒就放開，視為一般點擊，顯示提示
                 alert('此模式僅供開發人員使用');
             }
         };
+
+        sandboxBtn.addEventListener('mousedown', startLongPress);
+        sandboxBtn.addEventListener('touchstart', startLongPress, { passive: true });
+        sandboxBtn.addEventListener('mouseup', cancelLongPress);
+        sandboxBtn.addEventListener('touchend', cancelLongPress);
+        sandboxBtn.addEventListener('mouseleave', () => {
+            if (sandboxTimer) {
+                clearTimeout(sandboxTimer);
+                sandboxTimer = null;
+            }
+        });
+        // 移除原本的 onclick，改用監聽器處理
+        sandboxBtn.onclick = null;
 
         document.getElementById('open-guide-btn').onclick = () => {
             this.showPage('guide-page');

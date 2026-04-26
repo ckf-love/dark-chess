@@ -25,22 +25,22 @@ body {
     background: var(--bg-gradient);
     color: white;
     font-family: var(--font-main);
-    min-height: 100vh;
+    height: 100dvh;
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow-x: hidden;
+    overflow: hidden; /* 防止任何方向的捲動 */
 }
 
 #app {
     width: 100%;
     max-width: 1000px;
-    padding: 20px;
+    height: 100%;
+    padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 10px;
     align-items: center;
-    min-height: 100vh;
     justify-content: center;
 }
 
@@ -216,20 +216,20 @@ main {
     100% { opacity: 1; }
 }
 
-/* 棋盤 */
+/* 棋盤：使用 vmin 確保寬高皆不超出螢幕 */
 .board {
     display: grid;
     grid-template-columns: repeat(4, 18vmin);
-    grid-template-rows: repeat(8, 18vmin);
-    gap: 5px;
-    padding: 10px;
+    grid-template-rows: repeat(8, 11vh); /* 針對手機長螢幕優化高度 */
+    gap: 4px;
+    padding: 6px;
     background-color: var(--board-bg);
     background-image: 
         linear-gradient(var(--grid-color) 1px, transparent 1px),
         linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-    background-size: calc(18vmin + 5px) calc(18vmin + 5px);
-    background-position: 5px 5px;
-    border: 6px solid #5d4037;
+    background-size: calc(18vmin + 4px) calc(11vh + 4px);
+    background-position: 4px 4px;
+    border: 4px solid #5d4037;
     border-radius: 5px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
@@ -239,7 +239,17 @@ main {
     .board {
         grid-template-columns: repeat(4, 75px);
         grid-template-rows: repeat(8, 75px);
-        background-size: 80px 80px;
+        background-size: 79px 79px;
+        background-position: 4px 4px;
+    }
+}
+
+/* 針對極短螢幕的手機優化 */
+@media (max-height: 600px) {
+    .board {
+        grid-template-columns: repeat(4, 15vmin);
+        grid-template-rows: repeat(8, 10vh);
+        background-size: calc(15vmin + 4px) calc(10vh + 4px);
     }
 }
 
