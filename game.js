@@ -87,11 +87,15 @@ class Game {
                 if (isPressing) {
                     this.isSandboxUnlocked = true;
                     sandboxBtn.classList.add('unlocked');
-                    sandboxBtn.style.borderColor = '#00d2ff';
-                    sandboxBtn.style.boxShadow = '0 0 15px rgba(0, 210, 255, 0.5)';
                     
-                    // 使用 alert 阻斷當前的觸控行為，防止自動觸發 click
-                    alert('🔧 開發人員測試模式已解鎖！現在點擊即可進入。');
+                    // 視覺回饋：按鈕變綠並更改文字
+                    sandboxBtn.style.borderColor = '#4ade80';
+                    sandboxBtn.style.boxShadow = '0 0 15px rgba(74, 222, 128, 0.5)';
+                    sandboxBtn.style.backgroundColor = 'rgba(74, 222, 128, 0.1)';
+                    sandboxBtn.style.color = '#4ade80';
+                    sandboxBtn.innerHTML = '🔓 點擊進入測試';
+                    
+                    // 移除 alert，這樣使用者放開手指時會直接觸發 click 進入測試模式，體驗更流暢
                 }
             }, 2500);
         };

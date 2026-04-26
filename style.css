@@ -41,7 +41,8 @@ body {
     flex-direction: column;
     gap: 10px;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start; /* 絕對從頂部開始排版，防止斷頭 */
+    overflow-y: auto; /* 允許畫面內部上下滑動 */
 }
 
 /* ===== 起始頁面樣式 ===== */
