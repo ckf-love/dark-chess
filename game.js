@@ -100,11 +100,10 @@ class Game {
             }
         };
 
-        sandboxBtn.addEventListener('mousedown', startLongPress);
-        sandboxBtn.addEventListener('touchstart', startLongPress, { passive: true });
-        sandboxBtn.addEventListener('mouseup', cancelLongPress);
-        sandboxBtn.addEventListener('mouseleave', cancelLongPress);
-        sandboxBtn.addEventListener('touchend', cancelLongPress);
+        sandboxBtn.addEventListener('pointerdown', startLongPress);
+        sandboxBtn.addEventListener('pointerup', cancelLongPress);
+        sandboxBtn.addEventListener('pointerleave', cancelLongPress);
+        sandboxBtn.addEventListener('pointercancel', cancelLongPress);
 
         // 點擊事件：負責進入模式或提示鎖定
         sandboxBtn.addEventListener('click', (e) => {
