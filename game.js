@@ -74,36 +74,43 @@ class Game {
         const sandboxBtn = document.getElementById('sandbox-mode-btn');
         let sandboxTimer = null;
 
-        const startLongPress = (e) => {
+        let isPressing = false;
+
+        const startPress = (e) => {
             if (this.isSandboxUnlocked) return;
-            // 防止右鍵觸發或多指觸發
             if (e.type === 'mousedown' && e.button !== 0) return;
             
+            isPressing = true;
+            if (sandboxTimer) clearTimeout(sandboxTimer);
+            
             sandboxTimer = setTimeout(() => {
-                this.isSandboxUnlocked = true;
-                sandboxTimer = null;
-                sandboxBtn.style.borderColor = '#00d2ff';
-                sandboxBtn.style.boxShadow = '0 0 15px rgba(0, 210, 255, 0.5)';
-                // 這裡沒有 this.showToast 的話可以用 alert 或自訂的 toast
-                if (typeof this.showToast === 'function') {
-                    this.showToast('🔧 開發人員測試模式已解鎖！現在點擊即可進入。');
-                } else {
+                if (isPressing) {
+                    this.isSandboxUnlocked = true;
+                    sandboxBtn.classList.add('unlocked');
+                    sandboxBtn.style.borderColor = '#00d2ff';
+                    sandboxBtn.style.boxShadow = '0 0 15px rgba(0, 210, 255, 0.5)';
+                    
+                    // 使用 alert 阻斷當前的觸控行為，防止自動觸發 click
                     alert('🔧 開發人員測試模式已解鎖！現在點擊即可進入。');
                 }
             }, 2500);
         };
 
-        const cancelLongPress = () => {
+        const cancelPress = () => {
+            isPressing = false;
             if (sandboxTimer) {
                 clearTimeout(sandboxTimer);
                 sandboxTimer = null;
             }
         };
 
-        sandboxBtn.addEventListener('pointerdown', startLongPress);
-        sandboxBtn.addEventListener('pointerup', cancelLongPress);
-        sandboxBtn.addEventListener('pointerleave', cancelLongPress);
-        sandboxBtn.addEventListener('pointercancel', cancelLongPress);
+        sandboxBtn.addEventListener('touchstart', startPress, { passive: true });
+        sandboxBtn.addEventListener('touchend', cancelPress);
+        sandboxBtn.addEventListener('touchcancel', cancelPress);
+
+        sandboxBtn.addEventListener('mousedown', startPress);
+        sandboxBtn.addEventListener('mouseup', cancelPress);
+        sandboxBtn.addEventListener('mouseleave', cancelPress);
 
         // 點擊事件：負責進入模式或提示鎖定
         sandboxBtn.addEventListener('click', (e) => {
@@ -114,6 +121,7 @@ class Game {
                 alert('此模式僅供開發人員使用');
             }
         });
+
 
         // 防止手機長按時觸發選單干擾
         sandboxBtn.addEventListener('contextmenu', e => {
