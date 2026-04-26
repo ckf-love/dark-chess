@@ -533,8 +533,9 @@ class Game {
 
     // 禁手：模擬移動後檢查是否重複 3 次
     checkRepetition(from, to) {
-        // 先暫存當前盤面
-        const originalBoard = JSON.parse(JSON.stringify(this.board));
+        // 先暫存被覆蓋的格子
+        const tempTo = this.board[to];
+        const tempFrom = this.board[from];
 
         // 模擬執行移動或吃子
         this.board[to] = this.board[from];
@@ -543,7 +544,8 @@ class Game {
         const nextStateHash = this.hashBoard();
 
         // 還原盤面
-        this.board = originalBoard;
+        this.board[from] = tempFrom;
+        this.board[to] = tempTo;
 
         // 計算歷史中有幾次這個盤面
         const count = this.stateHistory.filter(h => h === nextStateHash).length;
@@ -1131,10 +1133,9 @@ class Game {
 
         // 評估所有走法
         for (const move of sortedMoves) {
-            const originalBoard = JSON.parse(JSON.stringify(this.board));
-            this.simulateCapture(move.from, move.to);
+            const captured = this.simulateCapture(move.from, move.to);
             let score = this.minimax(depth - 1, -Infinity, Infinity, false);
-            this.board = originalBoard;
+            this.undoSimulateCapture(move.from, move.to, captured);
 
             if (score > bestScore) {
                 bestScore = score;
@@ -1214,10 +1215,9 @@ class Game {
         if (isMaximizing) {
             let maxEval = -Infinity;
             for (let move of sortedMoves) {
-                const originalBoard = JSON.parse(JSON.stringify(this.board));
-                this.simulateCapture(move.from, move.to);
+                const captured = this.simulateCapture(move.from, move.to);
                 let evaluation = this.minimax(depth - 1, alpha, beta, false);
-                this.board = originalBoard;
+                this.undoSimulateCapture(move.from, move.to, captured);
                 maxEval = Math.max(maxEval, evaluation);
                 alpha = Math.max(alpha, evaluation);
                 if (beta <= alpha) break;
@@ -1226,10 +1226,9 @@ class Game {
         } else {
             let minEval = Infinity;
             for (let move of sortedMoves) {
-                const originalBoard = JSON.parse(JSON.stringify(this.board));
-                this.simulateCapture(move.from, move.to);
+                const captured = this.simulateCapture(move.from, move.to);
                 let evaluation = this.minimax(depth - 1, alpha, beta, true);
-                this.board = originalBoard;
+                this.undoSimulateCapture(move.from, move.to, captured);
                 minEval = Math.min(minEval, evaluation);
                 beta = Math.min(beta, evaluation);
                 if (beta <= alpha) break;
@@ -1383,10 +1382,18 @@ class Game {
         return false;
     }
 
-    // 模擬吃子（正確移除被吃棋子）
+    // 模擬吃子（回傳被吃掉的棋子以便還原）
     simulateCapture(from, to) {
+        const captured = this.board[to];
         this.board[to] = this.board[from];
         this.board[from] = null;
+        return captured;
+    }
+
+    // 還原模擬吃子
+    undoSimulateCapture(from, to, captured) {
+        this.board[from] = this.board[to];
+        this.board[to] = captured;
     }
 
     // 走法生成
