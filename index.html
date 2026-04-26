@@ -3,20 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>神話暗棋：升級覺醒 (Mythic Dark Chess)</title>
+    <title>無雙暗棋 (Wushuang Dark Chess)</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700&family=Outfit:wght@300;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="app">
-        <header>
-            <h1>神話暗棋 <span class="subtitle">升級覺醒</span></h1>
-        </header>
+        <!-- 起始頁面 -->
+        <section id="start-page">
+            <header class="hero-header">
+                <h1>無雙暗棋</h1>
+                <p class="hero-subtitle">超越神話的對決</p>
+            </header>
+            <div class="menu-container">
+                <button id="normal-mode-btn" class="btn menu-btn primary">一般模式</button>
+                <button id="wushuang-mode-btn" class="btn menu-btn secondary">國士無雙模式</button>
+                <button id="sandbox-mode-btn" class="btn menu-btn secondary">測試模式</button>
+                <button id="open-guide-btn" class="btn menu-btn secondary">玩法說明</button>
+            </div>
+        </section>
 
         <!-- 自訂測試棋盤頁面 -->
         <section id="sandbox-page" class="hidden">
             <div class="sandbox-header">
-                <button id="back-from-sandbox" class="btn secondary">← 返回遊戲</button>
+                <button id="back-from-sandbox" class="btn secondary">← 返回主選單</button>
                 <h2>🧪 自訂測試棋盤</h2>
                 <button id="clear-sandbox" class="btn secondary">清空棋盤</button>
             </div>
@@ -47,17 +57,16 @@
         <!-- 玩法說明頁面 (預設隱藏) -->
         <section id="guide-page" class="hidden">
             <div class="guide-header">
-                <button id="back-to-game" class="btn secondary">← 返回遊戲</button>
+                <button id="back-to-menu" class="btn secondary">← 返回主選單</button>
                 <h2>棋子技能指南</h2>
             </div>
             
             <div class="guide-content">
-                <!-- 這裡會由 JS 生成各棋子的動態教學卡片 -->
                 <div id="guide-list"></div>
             </div>
         </section>
 
-        <main id="main-game">
+        <main id="main-game" class="hidden">
             <div class="game-container">
                 <!-- 狀態顯示欄 -->
                 <div class="status-bar">
@@ -75,13 +84,11 @@
                     <!-- 棋子將由 JS 生成 -->
                 </div>
 
-                <!-- 底部控制區 -->
+                <!-- 底部控制區 (簡化後) -->
                 <div class="controls">
                     <button id="undo-btn" class="btn primary">悔棋</button>
-                    <button id="guide-btn" class="btn secondary">玩法說明</button>
-                    <button id="sandbox-btn" class="btn secondary">🧪 測試棋盤</button>
                     <button id="reset-btn" class="btn secondary">重新開始</button>
-                    <button id="settings-btn" class="btn secondary">遊戲設定</button>
+                    <button id="back-to-menu-from-game" class="btn secondary">主選單</button>
                 </div>
             </div>
 
@@ -108,7 +115,7 @@
             </div>
         </div>
 
-        <!-- 設定彈窗 -->
+        <!-- 設定彈窗 (現在作為進入遊戲前的必要步驟) -->
         <div id="settings-modal" class="modal hidden">
             <div class="modal-content">
                 <h2>遊戲設定</h2>
@@ -129,17 +136,19 @@
                     </select>
                 </div>
                 <div class="setting-group">
-                    <label>音效</label>
+                    <label>音效開關</label>
                     <label class="toggle-switch" id="sound-toggle-label">
                         <input type="checkbox" id="sound-toggle" checked>
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-                <button id="close-settings" class="btn primary">確定</button>
+                <button id="start-game-confirm" class="btn primary">開始遊戲</button>
+                <button id="cancel-settings" class="btn secondary">取消</button>
             </div>
         </div>
     </div>
 
     <script src="game.js"></script>
+
 </body>
 </html>

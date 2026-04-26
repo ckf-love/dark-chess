@@ -39,10 +39,88 @@ class Game {
     }
 
     init() {
+        this.setupEventListeners();
+        this.initMenuListeners();
+        this.updateStatus();
+    }
+
+    showPage(pageId) {
+        const pages = ['start-page', 'sandbox-page', 'guide-page', 'main-game'];
+        pages.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (id === pageId) el.classList.remove('hidden');
+                else el.classList.add('hidden');
+            }
+        });
+        
+        // 特殊處理：如果是離開遊戲頁面，確保停止 AI 動作（簡單處理：不執行 endTurn）
+        if (pageId === 'start-page') {
+            this.isGameOver = true; 
+        }
+    }
+
+    initMenuListeners() {
+        // 起始頁面按鈕
+        document.getElementById('normal-mode-btn').onclick = () => {
+            document.getElementById('settings-modal').classList.remove('hidden');
+        };
+
+        document.getElementById('wushuang-mode-btn').onclick = () => {
+            alert('國士無雙模式開發中~ 敬請期待！');
+        };
+
+        document.getElementById('sandbox-mode-btn').onclick = () => {
+            this.showPage('sandbox-page');
+            this.initSandbox();
+        };
+
+        document.getElementById('open-guide-btn').onclick = () => {
+            this.showPage('guide-page');
+            this.initGuideAnimations();
+        };
+
+        // 設定彈窗按鈕
+        document.getElementById('start-game-confirm').onclick = () => {
+            this.gameMode = document.getElementById('mode-select').value;
+            this.aiDifficulty = document.getElementById('difficulty-select').value;
+            document.getElementById('game-mode-display').innerText = 
+                this.gameMode === 'pvp' ? '人 vs 人' : `人 vs AI (${this.getDiffName(this.aiDifficulty)})`;
+            document.getElementById('settings-modal').classList.add('hidden');
+            
+            // 正式開始遊戲
+            this.startNewGame();
+        };
+
+        document.getElementById('cancel-settings').onclick = () => {
+            document.getElementById('settings-modal').classList.add('hidden');
+        };
+
+        // 返回主選單按鈕
+        document.getElementById('back-from-sandbox').onclick = () => this.showPage('start-page');
+        document.getElementById('back-to-menu').onclick = () => {
+            this.showPage('start-page');
+            this.stopGuideAnimations();
+        };
+        document.getElementById('back-to-menu-from-game').onclick = () => {
+            if (confirm('確定要回到主選單？目前的遊戲進度將遺失。')) {
+                this.showPage('start-page');
+            }
+        };
+    }
+
+    startNewGame() {
+        this.isGameOver = false;
+        this.turn = 'red';
+        this.selectedTile = null;
+        this.history = [];
+        this.recentMoves = [];
+        this.captured = { red: [], black: [] };
         this.setupBoard();
         this.renderBoard();
-        this.setupEventListeners();
         this.updateStatus();
+        this.updateGraveyard();
+        this.showPage('main-game');
     }
 
     saveHistory() {
@@ -173,18 +251,17 @@ class Game {
             this.soundEnabled = e.target.checked;
         });
 
-        // 沙盒模式導航
-        document.getElementById('sandbox-btn').addEventListener('click', () => {
-            document.getElementById('main-game').classList.add('hidden');
-            document.getElementById('sandbox-page').classList.remove('hidden');
-            this.initSandbox();
+        document.getElementById('undo-btn').addEventListener('click', () => {
+            this.undo();
         });
 
-        document.getElementById('back-from-sandbox').addEventListener('click', () => {
-            document.getElementById('sandbox-page').classList.add('hidden');
-            document.getElementById('main-game').classList.remove('hidden');
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (confirm('確定要重新開始遊戲嗎？')) {
+                document.getElementById('settings-modal').classList.remove('hidden');
+            }
         });
 
+        // 沙盒模式特定功能
         document.getElementById('clear-sandbox').addEventListener('click', () => {
             this.sandboxBoard = new Array(32).fill(null);
             this.renderSandboxBoard();
@@ -192,53 +269,19 @@ class Game {
 
         document.getElementById('sandbox-load-game').addEventListener('click', () => {
             if (confirm('確定將此棋盤載入主遊戲？（目前遊戲進度將被清除）')) {
-                // 深拷貝沙盒棋盤到主遊戲
+                this.isGameOver = false;
                 this.board = JSON.parse(JSON.stringify(this.sandboxBoard));
                 this.turn = 'red';
-                this.isGameOver = false;
                 this.selectedTile = null;
                 this.history = [];
                 this.recentMoves = [];
                 this.captured = { red: [], black: [] };
-                document.getElementById('sandbox-page').classList.add('hidden');
-                document.getElementById('main-game').classList.remove('hidden');
                 this.renderBoard();
                 this.updateStatus();
                 this.updateGraveyard();
+                this.showPage('main-game');
                 this.showToast('沙盒棋盤已載入！紅方先行。');
             }
-        });
-
-        document.getElementById('guide-btn').addEventListener('click', () => {
-            document.getElementById('main-game').classList.add('hidden');
-            document.getElementById('guide-page').classList.remove('hidden');
-            this.initGuideAnimations();
-        });
-
-        document.getElementById('back-to-game').addEventListener('click', () => {
-            document.getElementById('guide-page').classList.add('hidden');
-            document.getElementById('main-game').classList.remove('hidden');
-            this.stopGuideAnimations();
-        });
-
-        document.getElementById('undo-btn').addEventListener('click', () => {
-            this.undo();
-        });
-
-        document.getElementById('reset-btn').addEventListener('click', () => {
-            if (confirm('確定要重新開始遊戲嗎？')) location.reload();
-        });
-
-        document.getElementById('settings-btn').addEventListener('click', () => {
-            document.getElementById('settings-modal').classList.remove('hidden');
-        });
-
-        document.getElementById('close-settings').addEventListener('click', () => {
-            this.gameMode = document.getElementById('mode-select').value;
-            this.aiDifficulty = document.getElementById('difficulty-select').value;
-            document.getElementById('game-mode-display').innerText = 
-                this.gameMode === 'pvp' ? '人 vs 人' : `人 vs AI (${this.getDiffName(this.aiDifficulty)})`;
-            document.getElementById('settings-modal').classList.add('hidden');
         });
     }
 
