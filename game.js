@@ -182,6 +182,7 @@ class Game {
         this.turnCount = 0;
         this.lastMovedTo = null;
         this.isWaitingForRetreat = false;
+        this.isWaitingForAI = false;
         this.captured = { red: [], black: [] };
         this.isFromSandbox = false;
         document.getElementById('return-sandbox-btn').classList.add('hidden');
@@ -1058,30 +1059,38 @@ class Game {
     makeAIMove() {
         if (this.isGameOver) return;
 
-        let bestMove = null;
+        try {
+            let bestMove = null;
 
-        switch (this.aiDifficulty) {
-            case 'novice':
-                bestMove = this.getRandomMove();
-                break;
-            case 'amateur':
-                bestMove = this.getSmartMove(2);
-                break;
-            case 'pro':
-                bestMove = this.getSmartMove(4);
-                break;
-            case 'god':
-                bestMove = this.getSmartMove(5);
-                break;
-        }
-
-        if (bestMove) {
-            if (bestMove.type === 'flip') {
-                this.handleTileClick(bestMove.index);
-            } else {
-                this.handleTileClick(bestMove.from);
-                setTimeout(() => this.handleTileClick(bestMove.to), 400);
+            switch (this.aiDifficulty) {
+                case 'novice':
+                    bestMove = this.getRandomMove();
+                    break;
+                case 'amateur':
+                    bestMove = this.getSmartMove(2);
+                    break;
+                case 'pro':
+                    bestMove = this.getSmartMove(4);
+                    break;
+                case 'god':
+                    bestMove = this.getSmartMove(5);
+                    break;
             }
+
+            if (bestMove) {
+                if (bestMove.type === 'flip') {
+                    this.handleTileClick(bestMove.index);
+                } else {
+                    this.handleTileClick(bestMove.from);
+                    setTimeout(() => this.handleTileClick(bestMove.to), 400);
+                }
+            } else {
+                console.warn('AI 找不到任何走法！');
+            }
+        } catch (error) {
+            console.error('AI Error:', error);
+            alert('AI 發生錯誤: ' + error.message + '\n' + error.stack);
+            this.isWaitingForAI = false; // 解除鎖定，讓玩家可以繼續操作
         }
     }
 
