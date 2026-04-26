@@ -400,7 +400,7 @@ class Game {
     }
 
     getDiffName(diff) {
-        const names = { 'novice': '新手', 'amateur': '業餘', 'pro': '職業', 'god': '神手' };
+        const names = { 'novice': '3歲小童', 'amateur': '小學生', 'pro': '樓下阿嬤', 'god': '公園阿伯' };
         return names[diff];
     }
 
@@ -484,6 +484,9 @@ class Game {
         // 動態先手決定
         if (this.turn === 'none') {
             this.turn = piece.side; // 當前翻棋回合算作此顏色的回合，endTurn 時會切換給對手
+            if (this.gameMode === 'pve') {
+                this.playerSide = piece.side; // 玩家使用翻出的顏色
+            }
             this.showToast(`先手確定！玩家為 ${piece.side === 'red' ? '紅方' : '黑方'}`);
         }
 
@@ -872,7 +875,7 @@ class Game {
                     this.captured[this.board[to].side].push(extraVictim);
                     this.board[trIdx] = null;
                     this.playSound('capture');
-                    alert('相觸發【重踏】：連帶震碎後方棋子！');
+                    this.showToast('相觸發【重踏】：連帶震碎後方棋子！');
                     this.renderBoard();
                 }
             }
@@ -1187,7 +1190,7 @@ class Game {
             return this.evaluateBoard();
         }
 
-        const side = isMaximizing ? 'black' : 'red';
+        const side = isMaximizing ? this.aiSide : this.playerSide;
         const moves = this.getAllValidMoves(side);
 
         // 無棋可走 = 極端劣勢
@@ -1228,20 +1231,20 @@ class Game {
 
     evaluateBoard() {
         let score = 0;
-        let blackMobility = 0;
-        let redMobility = 0;
-        let blackPieceCount = 0;
-        let redPieceCount = 0;
+        let aiMobility = 0;
+        let playerMobility = 0;
+        let aiPieceCount = 0;
+        let playerPieceCount = 0;
 
         this.board.forEach((p, i) => {
             if (!p) return;
             if (!p.isFlipped) {
-                score += (p.side === 'black' ? 2 : -2);
+                score += (p.side === this.aiSide ? 2 : -2);
                 return;
             }
 
             const side = p.side;
-            if (side === 'black') blackPieceCount++; else redPieceCount++;
+            if (side === this.aiSide) aiPieceCount++; else playerPieceCount++;
 
             // === 基礎棋子價值 (使用更大的差距) ===
             let val = PIECE_TYPES[p.type].value * 50;
@@ -1252,8 +1255,8 @@ class Game {
                 if (p.cooldown === 0) val += 15; // 技能可用更值錢
             }
 
-            // === 兵的額外命 ===
-            if (p.type === '兵' && p.livesLeft > 0) val += 20;
+            // === 兵的撤退防禦加成 ===
+            if (p.type === '兵' && p.isUpgraded && p.retreatHitTurn === -1) val += 20;
 
             // === 位置評估 ===
             const { r, c } = this.getRC(i);
@@ -1289,8 +1292,8 @@ class Game {
                 if (this.tryMovePreview(i, j)) mobility++;
             }
             val += mobility * 3;
-            if (side === 'black') blackMobility += mobility;
-            else redMobility += mobility;
+            if (side === this.aiSide) aiMobility += mobility;
+            else playerMobility += mobility;
 
             // === 帥/將特殊評估：安全最重要 ===
             if (p.type === '帥') {
@@ -1327,14 +1330,14 @@ class Game {
                 if (friendlySoldiersNearby >= 1) val += 15; // 兵靠近有夾擊潛力
             }
 
-            score += (side === 'black' ? val : -val);
+            score += (side === this.aiSide ? val : -val);
         });
 
         // === 全局機動性差值 ===
-        score += (blackMobility - redMobility) * 2;
+        score += (aiMobility - playerMobility) * 2;
 
         // === 棋子數差值加成 ===
-        score += (blackPieceCount - redPieceCount) * 15;
+        score += (aiPieceCount - playerPieceCount) * 15;
 
         return score;
     }
@@ -1421,7 +1424,7 @@ class Game {
             { type: '俥', skill: '衝鋒', desc: '直線衝刺越級吃子，不可用於單純移動。', demo: 'rush' },
             { type: '傌', skill: '凌空', desc: '跳過相鄰的一顆棋子越級吃子，不可用於單純移動。', demo: 'leap' },
             { type: '砲', skill: '神砲', desc: '可一次飛越多顆棋子進行遠程打擊。', demo: 'supercannon' },
-            { type: '兵', skill: '難纏/埋伏', desc: '兩條命（撤退機制）；兩隻兵夾擊敵棋可越級吃子。', demo: 'ambush' }
+            { type: '兵', skill: '撤退/埋伏', desc: '升級後可撤退一次（需連續攻擊兩次才能擊殺）；兩隻兵夾擊敵棋可越級吃子。', demo: 'ambush' }
         ];
 
         this.guideTimers = [];
