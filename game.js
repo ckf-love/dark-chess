@@ -70,17 +70,26 @@ class Game {
             alert('國士無雙模式開發中~ 敬請期待！');
         };
 
+        this.isSandboxUnlocked = false;
         const sandboxBtn = document.getElementById('sandbox-mode-btn');
         let sandboxTimer = null;
 
         const startLongPress = (e) => {
+            if (this.isSandboxUnlocked) return;
             // 防止右鍵觸發或多指觸發
             if (e.type === 'mousedown' && e.button !== 0) return;
             
             sandboxTimer = setTimeout(() => {
-                this.showPage('sandbox-page');
-                this.initSandbox();
+                this.isSandboxUnlocked = true;
                 sandboxTimer = null;
+                sandboxBtn.style.borderColor = '#00d2ff';
+                sandboxBtn.style.boxShadow = '0 0 15px rgba(0, 210, 255, 0.5)';
+                // 這裡沒有 this.showToast 的話可以用 alert 或自訂的 toast
+                if (typeof this.showToast === 'function') {
+                    this.showToast('🔧 開發人員測試模式已解鎖！現在點擊即可進入。');
+                } else {
+                    alert('🔧 開發人員測試模式已解鎖！現在點擊即可進入。');
+                }
             }, 2500);
         };
 
@@ -88,23 +97,29 @@ class Game {
             if (sandboxTimer) {
                 clearTimeout(sandboxTimer);
                 sandboxTimer = null;
-                // 如果長按未滿 2.5 秒就放開，視為一般點擊，顯示提示
-                alert('此模式僅供開發人員使用');
             }
         };
 
         sandboxBtn.addEventListener('mousedown', startLongPress);
         sandboxBtn.addEventListener('touchstart', startLongPress, { passive: true });
         sandboxBtn.addEventListener('mouseup', cancelLongPress);
+        sandboxBtn.addEventListener('mouseleave', cancelLongPress);
         sandboxBtn.addEventListener('touchend', cancelLongPress);
-        sandboxBtn.addEventListener('mouseleave', () => {
-            if (sandboxTimer) {
-                clearTimeout(sandboxTimer);
-                sandboxTimer = null;
+
+        // 點擊事件：負責進入模式或提示鎖定
+        sandboxBtn.addEventListener('click', (e) => {
+            if (this.isSandboxUnlocked) {
+                this.showPage('sandbox-page');
+                this.initSandbox();
+            } else {
+                alert('此模式僅供開發人員使用');
             }
         });
-        // 移除原本的 onclick，改用監聽器處理
-        sandboxBtn.onclick = null;
+
+        // 防止手機長按時觸發選單干擾
+        sandboxBtn.addEventListener('contextmenu', e => {
+            if (!this.isSandboxUnlocked) e.preventDefault();
+        });
 
         document.getElementById('open-guide-btn').onclick = () => {
             this.showPage('guide-page');
