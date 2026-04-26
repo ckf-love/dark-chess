@@ -66,14 +66,16 @@ body {
 
 .hero-header h1 {
     font-family: var(--font-serif);
-    font-size: 5rem;
-    letter-spacing: 15px;
+    font-size: clamp(2.5rem, 18vw, 5rem);
+    letter-spacing: clamp(5px, 2vw, 15px);
     background: linear-gradient(to bottom, #fff 20%, #ffd700 50%, #b8860b 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.3));
     margin-bottom: 10px;
     text-shadow: none;
+    white-space: nowrap;
+    width: 100%;
 }
 
 .hero-subtitle {

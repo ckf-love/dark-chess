@@ -70,9 +70,21 @@ class Game {
             alert('國士無雙模式開發中~ 敬請期待！');
         };
 
-        document.getElementById('sandbox-mode-btn').onclick = () => {
-            this.showPage('sandbox-page');
-            this.initSandbox();
+        document.getElementById('sandbox-mode-btn').onclick = (e) => {
+            const now = Date.now();
+            if (!this._lastSandboxClick || now - this._lastSandboxClick > 500) {
+                this._sandboxClickCount = 0;
+            }
+            this._lastSandboxClick = now;
+            this._sandboxClickCount++;
+
+            if (this._sandboxClickCount >= 3) {
+                this.showPage('sandbox-page');
+                this.initSandbox();
+                this._sandboxClickCount = 0; // 重置
+            } else {
+                alert('此模式僅供開發人員使用');
+            }
         };
 
         document.getElementById('open-guide-btn').onclick = () => {
