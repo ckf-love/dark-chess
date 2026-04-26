@@ -27,14 +27,20 @@ class Game {
         this.captured = { red: [], black: [] };
         this.history = []; // 歷史紀錄堆疊
         this.isWaitingForAI = false;
-        this.recentMoves = []; // 追蹤最近棋步 (禁手規則)
+        this.recentMoves = []; // 舊版禁手（將淘汰）
+        this.stateHistory = []; // 新版禁手狀態雜湊
+        this.turnCount = 0; // 總回合數
+        this.lastMovedTo = null; // 移動後發光提示
+        this.isWaitingForRetreat = false; // 等待玩家選擇撤退方向
+        this.retreatData = null; // 儲存撤退所需的資訊 { attacker, victim, options }
         this.audioContext = null; // 持久化音效上下文 (修復手機音效)
         this.soundEnabled = true; // 音效開關
         // 沙盒模式狀態
         this.sandboxBoard = new Array(32).fill(null);
         this.selectedPieceDef = null;
         this.sandboxEraseMode = false;
-        
+        this.isFromSandbox = false; // 是否由沙盒載入
+
         this.init();
     }
 
@@ -53,10 +59,10 @@ class Game {
                 else el.classList.add('hidden');
             }
         });
-        
+
         // 特殊處理：如果是離開遊戲頁面，確保停止 AI 動作（簡單處理：不執行 endTurn）
         if (pageId === 'start-page') {
-            this.isGameOver = true; 
+            this.isGameOver = true;
         }
     }
 
@@ -79,22 +85,22 @@ class Game {
         const startPress = (e) => {
             if (this.isSandboxUnlocked) return;
             if (e.type === 'mousedown' && e.button !== 0) return;
-            
+
             isPressing = true;
             if (sandboxTimer) clearTimeout(sandboxTimer);
-            
+
             sandboxTimer = setTimeout(() => {
                 if (isPressing) {
                     this.isSandboxUnlocked = true;
                     sandboxBtn.classList.add('unlocked');
-                    
+
                     // 視覺回饋：按鈕變綠並更改文字
                     sandboxBtn.style.borderColor = '#4ade80';
                     sandboxBtn.style.boxShadow = '0 0 15px rgba(74, 222, 128, 0.5)';
                     sandboxBtn.style.backgroundColor = 'rgba(74, 222, 128, 0.1)';
                     sandboxBtn.style.color = '#4ade80';
                     sandboxBtn.innerHTML = '🔓 點擊進入測試';
-                    
+
                     // 移除 alert，這樣使用者放開手指時會直接觸發 click 進入測試模式，體驗更流暢
                 }
             }, 2500);
@@ -141,10 +147,10 @@ class Game {
         document.getElementById('start-game-confirm').onclick = () => {
             this.gameMode = document.getElementById('mode-select').value;
             this.aiDifficulty = document.getElementById('difficulty-select').value;
-            document.getElementById('game-mode-display').innerText = 
+            document.getElementById('game-mode-display').innerText =
                 this.gameMode === 'pvp' ? '人 vs 人' : `人 vs AI (${this.getDiffName(this.aiDifficulty)})`;
             document.getElementById('settings-modal').classList.add('hidden');
-            
+
             // 正式開始遊戲
             this.startNewGame();
         };
@@ -168,11 +174,18 @@ class Game {
 
     startNewGame() {
         this.isGameOver = false;
-        this.turn = 'red';
+        this.turn = 'none';
+        this.playerSide = null;
         this.selectedTile = null;
         this.history = [];
-        this.recentMoves = [];
+        this.stateHistory = [];
+        this.turnCount = 0;
+        this.lastMovedTo = null;
+        this.isWaitingForRetreat = false;
         this.captured = { red: [], black: [] };
+        this.isFromSandbox = false;
+        document.getElementById('return-sandbox-btn').classList.add('hidden');
+        
         this.setupBoard();
         this.renderBoard();
         this.updateStatus();
@@ -186,7 +199,13 @@ class Game {
             board: this.board,
             turn: this.turn,
             captured: this.captured,
-            isGameOver: this.isGameOver
+            isGameOver: this.isGameOver,
+            stateHistory: this.stateHistory,
+            turnCount: this.turnCount,
+            lastMovedTo: this.lastMovedTo,
+            isWaitingForRetreat: this.isWaitingForRetreat,
+            retreatData: this.retreatData,
+            playerSide: this.playerSide
         });
         this.history.push(state);
     }
@@ -200,6 +219,12 @@ class Game {
             this.turn = lastState.turn;
             this.captured = lastState.captured;
             this.isGameOver = lastState.isGameOver;
+            this.stateHistory = lastState.stateHistory;
+            this.turnCount = lastState.turnCount;
+            this.lastMovedTo = lastState.lastMovedTo;
+            this.isWaitingForRetreat = lastState.isWaitingForRetreat;
+            this.retreatData = lastState.retreatData;
+            this.playerSide = lastState.playerSide;
         };
 
         // 執行回溯
@@ -209,7 +234,7 @@ class Game {
         // 為了讓玩家回到自己的回合，我們通常需要連續回溯兩步
         if (this.gameMode === 'pve' && this.history.length > 0) {
             // 如果回溯一步後發現還是 AI 的回合，再回溯一步
-            if (this.turn === 'black') {
+            if (this.turn === this.aiSide) {
                 restore();
             }
         }
@@ -224,7 +249,7 @@ class Game {
     setupBoard() {
         const pieces = [];
         const types = ['帥', '仕', '相', '俥', '傌', '砲', '兵'];
-        
+
         // 建立紅黑雙方棋子
         ['red', 'black'].forEach(side => {
             types.forEach(type => {
@@ -238,7 +263,7 @@ class Game {
                         isFlipped: false,
                         isUpgraded: false,
                         cooldown: 0, // 技能冷卻 (0 為可用)
-                        livesLeft: type === '兵' ? 1 : 0
+                        retreatHitTurn: -1 // 記錄上一次遭到攻擊的回合
                     });
                 }
             });
@@ -251,6 +276,11 @@ class Game {
         }
 
         this.board = pieces;
+        this.turn = 'none'; // 動態決定先手
+        this.stateHistory = [];
+        this.turnCount = 0;
+        this.lastMovedTo = null;
+        this.isWaitingForRetreat = false;
     }
 
     getChar(type, side) {
@@ -264,16 +294,23 @@ class Game {
     renderBoard() {
         const boardEl = document.getElementById('board');
         boardEl.innerHTML = '';
-        
+
         this.board.forEach((piece, index) => {
             const tile = document.createElement('div');
             tile.className = 'tile';
             tile.dataset.index = index;
 
+            // 標示玩家手動撤退可選的格子
+            if (this.isWaitingForRetreat && this.retreatData && this.retreatData.options.includes(index)) {
+                tile.classList.add('retreat-target');
+            }
+
             if (piece) {
+                // 加入 last-moved class
+                const isLastMoved = (index === this.lastMovedTo) ? 'last-moved' : '';
                 const pieceEl = document.createElement('div');
-                pieceEl.className = `piece ${piece.side} ${piece.isFlipped ? 'flipped' : ''} ${piece.isUpgraded ? 'upgraded' : ''} ${piece.cooldown > 0 ? 'cooldown' : ''}`;
-                
+                pieceEl.className = `piece ${piece.side} ${piece.isFlipped ? 'flipped' : ''} ${piece.isUpgraded ? 'upgraded' : ''} ${piece.cooldown > 0 ? 'cooldown' : ''} ${isLastMoved}`;
+
                 const front = document.createElement('div');
                 front.className = 'piece-face piece-front';
                 front.innerText = piece.char;
@@ -285,6 +322,7 @@ class Game {
                 pieceEl.appendChild(back);
                 tile.appendChild(pieceEl);
             }
+
 
             boardEl.appendChild(tile);
         });
@@ -328,16 +366,35 @@ class Game {
             if (confirm('確定將此棋盤載入主遊戲？（目前遊戲進度將被清除）')) {
                 this.isGameOver = false;
                 this.board = JSON.parse(JSON.stringify(this.sandboxBoard));
+                // 將所有兵的退避回合重置
+                this.board.forEach(p => { if(p) p.retreatHitTurn = -1; });
+                
                 this.turn = 'red';
+                this.playerSide = 'red'; // 預設沙盒載入後玩家為紅方
                 this.selectedTile = null;
                 this.history = [];
-                this.recentMoves = [];
+                this.stateHistory = [];
+                this.turnCount = 0;
+                this.lastMovedTo = null;
+                this.isWaitingForRetreat = false;
                 this.captured = { red: [], black: [] };
+                this.isFromSandbox = true;
+
                 this.renderBoard();
                 this.updateStatus();
                 this.updateGraveyard();
                 this.showPage('main-game');
                 this.showToast('沙盒棋盤已載入！紅方先行。');
+                
+                // 顯示返回沙盒按鈕
+                document.getElementById('return-sandbox-btn').classList.remove('hidden');
+            }
+        });
+
+        // 返回測試模式
+        document.getElementById('return-sandbox-btn').addEventListener('click', () => {
+            if (confirm('確定要返回測試模式嗎？（目前的遊戲進度不會儲存）')) {
+                this.showPage('sandbox-page');
             }
         });
     }
@@ -349,12 +406,24 @@ class Game {
 
     handleTileClick(index, isManual = false) {
         if (this.isGameOver) return;
-        
-        // 如果是玩家手動點擊，且目前是 AI 回合，則攔截
-        if (isManual && (this.isWaitingForAI || (this.gameMode === 'pve' && this.turn === 'black'))) {
+
+        // 如果處於等待撤退選擇狀態
+        if (this.isWaitingForRetreat && isManual) {
+            if (this.retreatData && this.retreatData.options.includes(index)) {
+                this.executeRetreat(index);
+                this.endTurn();
+            } else {
+                this.showToast('請選擇發綠光的安全格子進行撤退！');
+            }
             return;
         }
-        
+
+        // 如果是玩家手動點擊，且目前是 AI 回合，則攔截
+        // 在沙盒載入的遊戲中，AI 永遠是 aiSide
+        if (isManual && (this.isWaitingForAI || (this.gameMode === 'pve' && this.turn === this.aiSide))) {
+            return;
+        }
+
         const piece = this.board[index];
 
         // 1. 翻棋
@@ -379,8 +448,11 @@ class Game {
 
         // 3. 移動或吃子
         if (this.selectedTile !== null) {
-            if (this.tryMove(this.selectedTile, index)) {
+            const moveResult = this.tryMove(this.selectedTile, index);
+            if (moveResult === true) {
                 this.endTurn();
+            } else if (moveResult === 'pending') {
+                // 等待玩家選擇撤退，不結束回合
             } else {
                 // 如果點擊的是自己的另一顆棋子，切換選擇
                 if (piece && piece.isFlipped && piece.side === this.turn) {
@@ -406,7 +478,16 @@ class Game {
 
     flipPiece(index) {
         this.saveHistory();
-        this.board[index].isFlipped = true;
+        const piece = this.board[index];
+        piece.isFlipped = true;
+        
+        // 動態先手決定
+        if (this.turn === 'none') {
+            this.turn = piece.side; // 當前翻棋回合算作此顏色的回合，endTurn 時會切換給對手
+            this.showToast(`先手確定！玩家為 ${piece.side === 'red' ? '紅方' : '黑方'}`);
+        }
+
+        this.stateHistory = []; // 翻棋後重置狀態紀錄 (無法重複)
         this.renderBoard();
         this.playSound('flip');
     }
@@ -418,7 +499,7 @@ class Game {
         // 基本規則檢查
         if (!this.isValidTarget(from, to)) return false;
 
-        // 禁手規則：同樣棋步不得連用超過 3 次
+        // 禁手規則：同樣棋盤狀態不得出現 3 次
         if (this.checkRepetition(from, to)) {
             this.showRepetitionWarning(from, to);
             return false;
@@ -427,36 +508,42 @@ class Game {
         if (!target) {
             // 移動到空格
             if (this.canMoveToEmpty(from, to)) {
-                this.recordMove(from, to);
                 this.movePiece(from, to);
                 return true;
             }
         } else {
             // 吃子嘗試
             if (this.canCapture(from, to)) {
-                this.recordMove(from, to);
-                this.capturePiece(from, to);
-                return true;
+                const capResult = this.capturePiece(from, to);
+                return capResult === 'pending' ? 'pending' : true;
             }
         }
 
         return false;
     }
 
-    // 禁手：記錄棋步
-    recordMove(from, to) {
-        this.recentMoves.push(`${from}-${to}`);
-        // 只保留最近 20 步
-        if (this.recentMoves.length > 20) {
-            this.recentMoves.shift();
-        }
+    // 取得當前盤面的字串特徵，用於禁手判定
+    hashBoard() {
+        return this.board.map(p => p ? `${p.side[0]}${p.type}${p.isFlipped?1:0}` : '0').join('');
     }
 
-    // 禁手：檢查是否重複超過 3 次
+    // 禁手：模擬移動後檢查是否重複 3 次
     checkRepetition(from, to) {
-        const key = `${from}-${to}`;
-        const count = this.recentMoves.filter(m => m === key).length;
-        return count >= 3;
+        // 先暫存當前盤面
+        const originalBoard = JSON.parse(JSON.stringify(this.board));
+        
+        // 模擬執行移動或吃子
+        this.board[to] = this.board[from];
+        this.board[from] = null;
+        
+        const nextStateHash = this.hashBoard();
+        
+        // 還原盤面
+        this.board = originalBoard;
+
+        // 計算歷史中有幾次這個盤面
+        const count = this.stateHistory.filter(h => h === nextStateHash).length;
+        return count >= 2; // 如果之前已經出現 2 次，這次走下去就是第 3 次，所以禁止
     }
 
     // 禁手：顯示警告彈窗
@@ -500,7 +587,7 @@ class Game {
     canCapture(from, to) {
         const piece = this.board[from];
         const target = this.board[to];
-        
+
         // 只能吃已翻開的棋子
         if (!target || !target.isFlipped) return false;
 
@@ -545,16 +632,16 @@ class Game {
         if (dr + dc === 1) {
             return this.compareRank(piece, target);
         }
-        
+
         return false;
     }
 
     checkAmbush(targetIndex, side) {
         const { r, c } = this.getRC(targetIndex);
         const neighbors = [
-            {r: r-1, c: c}, {r: r+1, c: c}, {r: r, c: c-1}, {r: r, c: c+1}
+            { r: r - 1, c: c }, { r: r + 1, c: c }, { r: r, c: c - 1 }, { r: r, c: c + 1 }
         ];
-        
+
         let soldierCount = 0;
         neighbors.forEach(n => {
             if (n.r >= 0 && n.r < BOARD_ROWS && n.c >= 0 && n.c < BOARD_COLS) {
@@ -583,13 +670,17 @@ class Game {
         // 如果使用了特殊移動 (如帥的對角線)，進入冷卻
         const { r: r1, c: c1 } = this.getRC(from);
         const { r: r2, c: c2 } = this.getRC(to);
-        if (piece.isUpgraded && piece.type === '帥' && Math.abs(r1-r2) === 1 && Math.abs(c1-c2) === 1) {
+        if (piece.isUpgraded && piece.type === '帥' && Math.abs(r1 - r2) === 1 && Math.abs(c1 - c2) === 1) {
             piece.cooldown = 2; // 設定冷卻 2 (因為 endTurn 會立刻減 1)
         }
 
         this.board[to] = this.board[from];
         this.board[from] = null;
         this.deselect();
+        
+        this.lastMovedTo = to;
+        this.stateHistory.push(this.hashBoard());
+        
         this.renderBoard();
         this.playSound('move');
     }
@@ -599,28 +690,42 @@ class Game {
         const attacker = this.board[from];
         const victim = this.board[to];
 
-        // 【BUG修復】先記錄升級前的狀態，避免 executeCapture 升級後誤觸重踏
+        // 先記錄升級前的狀態，避免 executeCapture 升級後誤觸重踏
         const wasAlreadyUpgraded = attacker.isUpgraded;
-
-        // 檢查是否使用了特殊技能吃子 (越級、跳躍、對角線)
         const isSpecialMove = this.isSpecialMove(from, to);
 
-        // 兵/卒的特殊防禦：兩命機制
-        if (victim.type === '兵' && victim.isUpgraded && victim.livesLeft > 0) {
-            this.handleSoldierRetreat(from, to); // 傳入 from 讓攻擊方補位
-            if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
-            return;
+        // 兵/卒的撤退防禦：連續攻擊判定
+        if (victim.type === '兵' && victim.isUpgraded) {
+            // 如果這回合距離上一次被打已經超過 2 個回合 (也就是經過了一整圈沒被打)，重置生命
+            if (victim.retreatHitTurn !== -1 && (this.turnCount - victim.retreatHitTurn > 2)) {
+                victim.retreatHitTurn = -1; // 喘息成功，滿血
+            }
+
+            if (victim.retreatHitTurn === -1) {
+                // 第一次被打，觸發撤退
+                const retreatResult = this.handleInteractiveSoldierRetreat(from, to);
+                if (retreatResult === 'pending') {
+                    if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
+                    return 'pending'; // 暫停回合等待選擇
+                } else if (retreatResult === 'done') {
+                    if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
+                    return 'done'; // AI 瞬間撤退完畢
+                }
+                // 若回傳 'killed' 代表無路可退，繼續執行底下的吃子
+            }
+            // 若 retreatHitTurn !== -1 代表連續被打，直接執行底下的吃子
         }
 
         // 執行吃子
         this.executeCapture(from, to);
         if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
 
-        // 相/象的重踏技能：必須是吃子前就已升級才能觸發 (修復第一次吃子誤觸BUG)
+        // 相/象的重踏技能：必須是吃子前就已升級才能觸發
         if (wasAlreadyUpgraded && attacker.type === '相' && attacker.cooldown === 0) {
             this.handleElephantTrample(from, to);
             attacker.cooldown = 2; // 重踏也是特殊技能
         }
+        return 'done';
     }
 
     isSpecialMove(from, to) {
@@ -637,7 +742,7 @@ class Game {
         if (dr >= 2 || dc >= 2) return true;
         // 埋伏吃子
         if (p.type === '兵' && !this.compareRank(p, t)) return true;
-        
+
         return false;
     }
 
@@ -652,53 +757,80 @@ class Game {
 
         this.captured[attacker.side].push(victim);
         this.updateGraveyard();
-        
+
         this.board[to] = attacker;
         this.board[from] = null;
-        
+
         this.deselect();
+        
+        this.stateHistory = []; // 吃子後無法復原狀態，清空歷史
+        this.lastMovedTo = to;
+        
         this.renderBoard();
         this.playSound('capture');
         this.checkWin();
     }
 
-    handleSoldierRetreat(from, index) {
-        // from = 攻擊方位置, index = 兵/卒位置
+    handleInteractiveSoldierRetreat(from, index) {
         const attacker = this.board[from];
         const victim = this.board[index];
         const { r, c } = this.getRC(index);
         const neighbors = [
-            {r: r-1, c: c}, {r: r+1, c: c}, {r: r, c: c-1}, {r: r, c: c+1}
+            { r: r - 1, c: c }, { r: r + 1, c: c }, { r: r, c: c - 1 }, { r: r, c: c + 1 }
         ];
 
-        // 找出空格 (排除攻擊方目前佔用的格子，因為它即將移走)
+        // 找出可撤退的空格 (包含攻擊方目前的位置，因為他等下會進來)
         const emptySlots = neighbors.filter(n => {
             if (n.r < 0 || n.r >= BOARD_ROWS || n.c < 0 || n.c >= BOARD_COLS) return false;
             const nIdx = n.r * BOARD_COLS + n.c;
-            // 攻擊方的格子即將空出，可作為退路
             return this.board[nIdx] === null || nIdx === from;
-        });
+        }).map(n => n.r * BOARD_COLS + n.c);
 
         if (emptySlots.length > 0) {
-            const escape = emptySlots[Math.floor(Math.random() * emptySlots.length)];
-            const escapeIdx = escape.r * BOARD_COLS + escape.c;
+            victim.retreatHitTurn = this.turnCount; // 記錄這次受傷的回合
 
-            // 1. 兵後退到逃脫格
-            this.board[escapeIdx] = victim;
-            victim.livesLeft--;
+            // 判斷是否由玩家手動操作
+            const isInteractive = (this.gameMode === 'pvp' || victim.side === this.playerSide);
 
-            // 2. 攻擊方補位到兵的原始格子
-            this.board[index] = attacker;
-            this.board[from] = null;
-
-            this.playSound('move');
-            // 使用非阻塞的提示浮層
-            this.showToast('兵卒觸發【難纏】：撤退一格！攻擊方補位！');
-            this.renderBoard();
+            if (isInteractive) {
+                this.isWaitingForRetreat = true;
+                this.retreatData = { attacker: from, victim: index, options: emptySlots };
+                this.showToast('兵卒觸發【撤退】！請點擊發綠光的安全格子避難！');
+                this.renderBoard();
+                return 'pending'; // 暫停回合
+            } else {
+                // AI 遭到攻擊，自動隨機選擇一個安全的退路
+                const escapeIdx = emptySlots[Math.floor(Math.random() * emptySlots.length)];
+                this.executeRetreat(escapeIdx, from, index);
+                return 'done'; // 自動完成
+            }
         } else {
-            // 無路可退，直接死亡
-            this.executeCapture(from, index);
+            return 'killed'; // 無路可退
         }
+    }
+
+    executeRetreat(targetIdx, fallbackAttacker = null, fallbackVictim = null) {
+        const attackerIdx = fallbackAttacker !== null ? fallbackAttacker : this.retreatData.attacker;
+        const victimIdx = fallbackVictim !== null ? fallbackVictim : this.retreatData.victim;
+
+        const attacker = this.board[attackerIdx];
+        const victim = this.board[victimIdx];
+
+        // 1. 兵後退到逃脫格
+        this.board[targetIdx] = victim;
+
+        // 2. 攻擊方補位
+        this.board[victimIdx] = attacker;
+        this.board[attackerIdx] = null;
+
+        this.isWaitingForRetreat = false;
+        this.retreatData = null;
+        
+        this.lastMovedTo = victimIdx;
+        this.stateHistory.push(this.hashBoard());
+        
+        this.playSound('move');
+        this.renderBoard();
     }
 
     // 輕量提示 (取代 alert，不阻塞遊戲)
@@ -776,8 +908,14 @@ class Game {
     updateStatus() {
         const indicator = document.getElementById('turn-indicator');
         const text = indicator.querySelector('.turn-text');
-        indicator.className = this.turn === 'red' ? 'turn-red' : 'turn-black';
-        text.innerText = this.turn === 'red' ? '紅方回合' : '黑方回合';
+        
+        if (this.turn === 'none') {
+            indicator.className = 'turn-none';
+            text.innerText = '請翻開第一顆棋子';
+        } else {
+            indicator.className = this.turn === 'red' ? 'turn-red' : 'turn-black';
+            text.innerText = this.turn === 'red' ? '紅方回合' : '黑方回合';
+        }
     }
 
     updateGraveyard() {
@@ -793,7 +931,14 @@ class Game {
         });
     }
 
+    get aiSide() {
+        if (this.playerSide) return this.playerSide === 'red' ? 'black' : 'red';
+        return 'black';
+    }
+
     endTurn() {
+        this.turnCount++; // 增加回合數
+
         // 更新所有棋子的冷卻時間 (目前回合方的棋子減冷卻)
         this.board.forEach(p => {
             if (p && p.side === this.turn && p.cooldown > 0) {
@@ -803,9 +948,9 @@ class Game {
 
         this.turn = this.turn === 'red' ? 'black' : 'red';
         this.updateStatus();
-        this.renderBoard(); // 重新渲染以更新冷卻視覺
-        
-        if (this.gameMode === 'pve' && this.turn === 'black' && !this.isGameOver) {
+        this.renderBoard(); // 重新渲染以更新冷卻視覺與發光提示
+
+        if (this.gameMode === 'pve' && this.turn === this.aiSide && !this.isGameOver) {
             this.isWaitingForAI = true;
             setTimeout(() => {
                 this.makeAIMove();
@@ -818,7 +963,7 @@ class Game {
         // 簡單判斷：某方棋子全部被吃掉
         const redLeft = this.board.filter(p => p && p.side === 'red').length;
         const blackLeft = this.board.filter(p => p && p.side === 'black').length;
-        
+
         if (redLeft === 0) {
             alert('黑方勝利！');
             this.isGameOver = true;
@@ -860,7 +1005,7 @@ class Game {
 
             const now = ctx.currentTime;
 
-            switch(type) {
+            switch (type) {
                 case 'flip':
                     osc.frequency.setValueAtTime(400, now);
                     osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
@@ -901,7 +1046,7 @@ class Game {
                     osc.stop(now + 0.08);
                     break;
             }
-        } catch(e) {
+        } catch (e) {
             // 音效失敗時靜默降級，不影響遊戲
             console.warn('Sound playback failed:', e);
         }
@@ -911,8 +1056,8 @@ class Game {
         if (this.isGameOver) return;
 
         let bestMove = null;
-        
-        switch(this.aiDifficulty) {
+
+        switch (this.aiDifficulty) {
             case 'novice':
                 bestMove = this.getRandomMove();
                 break;
@@ -938,7 +1083,7 @@ class Game {
     }
 
     getRandomMove() {
-        const moves = this.getAllValidMoves('black');
+        const moves = this.getAllValidMoves(this.aiSide);
         const unflipped = this.getUnflippedIndices();
         // 新手也會優先吃子
         const captures = moves.filter(m => this.board[m.to] !== null);
@@ -960,8 +1105,8 @@ class Game {
     getSmartMove(depth) {
         let bestScore = -Infinity;
         let bestMove = null;
-        
-        const moves = this.getAllValidMoves('black');
+
+        const moves = this.getAllValidMoves(this.aiSide);
         const unflipped = this.getUnflippedIndices();
 
         // 如果完全沒棋可走，必翻棋
@@ -970,7 +1115,7 @@ class Game {
         }
 
         // 走法排序：優先評估吃子走法，提高 alpha-beta 剪枝效率
-        const sortedMoves = this.orderMoves(moves, 'black');
+        const sortedMoves = this.orderMoves(moves, this.aiSide);
 
         // 評估所有走法
         for (const move of sortedMoves) {
@@ -988,14 +1133,14 @@ class Game {
         // 翻棋決策 (更聰明)
         if (unflipped.length > 0) {
             // 計算我方已翻開棋子數
-            const myFlipped = this.board.filter(p => p && p.side === 'black' && p.isFlipped).length;
-            const enemyFlipped = this.board.filter(p => p && p.side === 'red' && p.isFlipped).length;
-            
+            const myFlipped = this.board.filter(p => p && p.side === this.aiSide && p.isFlipped).length;
+            const enemyFlipped = this.board.filter(p => p && p.side === this.playerSide && p.isFlipped).length;
+
             // 情況1：沒有找到任何移動
             if (!bestMove) {
                 return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
             }
-            
+
             // 情況2：我方場上棋子太少，需要翻更多出來
             if (myFlipped <= 2 && unflipped.length > 0) {
                 return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
@@ -1100,13 +1245,13 @@ class Game {
 
             // === 基礎棋子價值 (使用更大的差距) ===
             let val = PIECE_TYPES[p.type].value * 50;
-            
+
             // === 升級加成 ===
             if (p.isUpgraded) {
                 val += 40;
                 if (p.cooldown === 0) val += 15; // 技能可用更值錢
             }
-            
+
             // === 兵的額外命 ===
             if (p.type === '兵' && p.livesLeft > 0) val += 20;
 
@@ -1115,7 +1260,7 @@ class Game {
             // 中心控制
             const distFromCenter = Math.abs(r - 3.5) + Math.abs(c - 1.5);
             val += (8 - distFromCenter * 1.5);
-            
+
             // 邊角懲罰（棋子容易被困）
             if (c === 0 || c === BOARD_COLS - 1) val -= 3;
             if (r === 0 || r === BOARD_ROWS - 1) val -= 2;
@@ -1123,7 +1268,7 @@ class Game {
             // === 安全性評估 ===
             const underThreat = this.isPieceUnderThreatAt(i, side);
             const isProtected = this.isPieceProtected(i, side);
-            
+
             if (underThreat) {
                 if (isProtected) {
                     // 被威脅但有保護：小幅減分
@@ -1133,7 +1278,7 @@ class Game {
                     val -= PIECE_TYPES[p.type].value * 25;
                 }
             }
-            
+
             if (isProtected && !underThreat) {
                 val += 5; // 安全且有保護加分
             }
@@ -1169,7 +1314,7 @@ class Game {
             // === 兵卒夾擊潛力 ===
             if (p.type === '兵') {
                 const { r: sr, c: sc } = this.getRC(i);
-                const dirs = [{r:sr-1,c:sc},{r:sr+1,c:sc},{r:sr,c:sc-1},{r:sr,c:sc+1}];
+                const dirs = [{ r: sr - 1, c: sc }, { r: sr + 1, c: sc }, { r: sr, c: sc - 1 }, { r: sr, c: sc + 1 }];
                 let friendlySoldiersNearby = 0;
                 dirs.forEach(d => {
                     if (d.r >= 0 && d.r < BOARD_ROWS && d.c >= 0 && d.c < BOARD_COLS) {
@@ -1213,7 +1358,7 @@ class Game {
     // 檢查某格的棋子是否有友軍保護（如果被吃，友軍能反吃）
     isPieceProtected(index, side) {
         const { r, c } = this.getRC(index);
-        const dirs = [{r:r-1,c:c},{r:r+1,c:c},{r:r,c:c-1},{r:r,c:c+1}];
+        const dirs = [{ r: r - 1, c: c }, { r: r + 1, c: c }, { r: r, c: c - 1 }, { r: r, c: c + 1 }];
         for (const d of dirs) {
             if (d.r >= 0 && d.r < BOARD_ROWS && d.c >= 0 && d.c < BOARD_COLS) {
                 const idx = d.r * BOARD_COLS + d.c;
@@ -1239,7 +1384,10 @@ class Game {
             if (p && p.side === side && p.isFlipped) {
                 for (let j = 0; j < 32; j++) {
                     if (this.tryMovePreview(i, j)) {
-                        moves.push({ from: i, to: j });
+                        // AI 走法生成時，必須排除會觸發禁手的棋步
+                        if (!this.checkRepetition(i, j)) {
+                            moves.push({ from: i, to: j });
+                        }
                     }
                 }
             }
@@ -1265,7 +1413,7 @@ class Game {
     initGuideAnimations() {
         const guideList = document.getElementById('guide-list');
         guideList.innerHTML = '';
-        
+
         const pieces = [
             { type: '帥', skill: '威震八方', desc: '可對角線移動/吃子（1格），不可吃兵。', demo: 'diagonal' },
             { type: '仕', skill: '越級刺殺', desc: '僅限對角線「越級」吃子。不可直線吃子或單純對角線移動。', demo: 'assassin' },
@@ -1297,19 +1445,19 @@ class Game {
 
     createDemoTiles() {
         let html = '';
-        for(let i=0; i<9; i++) html += `<div class="demo-tile"></div>`;
+        for (let i = 0; i < 9; i++) html += `<div class="demo-tile"></div>`;
         return html;
     }
 
     startDemo(type, demoType) {
         const board = document.getElementById(`demo-${type}`);
         const tiles = board.querySelectorAll('.demo-tile');
-        
+
         // 建立示範棋子
         const attacker = document.createElement('div');
         attacker.className = 'demo-piece red gold';
         attacker.innerText = type;
-        
+
         const victim = document.createElement('div');
         victim.className = 'demo-piece black';
         victim.innerText = (type === '帥') ? '卒' : '帥'; // 示範目標
@@ -1347,7 +1495,7 @@ class Game {
                     victim.style.opacity = '0';
                 }, 1000);
             }
-            
+
             this.guideTimers.push(setTimeout(() => {
                 victim.style.opacity = '1';
                 run();
@@ -1384,13 +1532,13 @@ class Game {
 
     renderPalette() {
         const allPieces = [
-            { type: '帥', side: 'red',   char: '帥' },
-            { type: '仕', side: 'red',   char: '仕' },
-            { type: '相', side: 'red',   char: '相' },
-            { type: '俥', side: 'red',   char: '俥' },
-            { type: '傌', side: 'red',   char: '傌' },
-            { type: '砲', side: 'red',   char: '砲' },
-            { type: '兵', side: 'red',   char: '兵' },
+            { type: '帥', side: 'red', char: '帥' },
+            { type: '仕', side: 'red', char: '仕' },
+            { type: '相', side: 'red', char: '相' },
+            { type: '俥', side: 'red', char: '俥' },
+            { type: '傌', side: 'red', char: '傌' },
+            { type: '砲', side: 'red', char: '砲' },
+            { type: '兵', side: 'red', char: '兵' },
             { type: '帥', side: 'black', char: '將' },
             { type: '仕', side: 'black', char: '士' },
             { type: '相', side: 'black', char: '象' },
