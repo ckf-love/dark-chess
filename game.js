@@ -73,7 +73,7 @@ class Game {
         };
 
         document.getElementById('wushuang-mode-btn').onclick = () => {
-            alert('國士無雙模式開發中~ 敬請期待！');
+            alert('國士無雙模式開發中~');
         };
 
         this.isSandboxUnlocked = false;
@@ -185,7 +185,7 @@ class Game {
         this.captured = { red: [], black: [] };
         this.isFromSandbox = false;
         document.getElementById('return-sandbox-btn').classList.add('hidden');
-        
+
         this.setupBoard();
         this.renderBoard();
         this.updateStatus();
@@ -367,8 +367,8 @@ class Game {
                 this.isGameOver = false;
                 this.board = JSON.parse(JSON.stringify(this.sandboxBoard));
                 // 將所有兵的退避回合重置
-                this.board.forEach(p => { if(p) p.retreatHitTurn = -1; });
-                
+                this.board.forEach(p => { if (p) p.retreatHitTurn = -1; });
+
                 this.turn = 'red';
                 this.playerSide = 'red'; // 預設沙盒載入後玩家為紅方
                 this.selectedTile = null;
@@ -385,7 +385,7 @@ class Game {
                 this.updateGraveyard();
                 this.showPage('main-game');
                 this.showToast('沙盒棋盤已載入！紅方先行。');
-                
+
                 // 顯示返回沙盒按鈕
                 document.getElementById('return-sandbox-btn').classList.remove('hidden');
             }
@@ -480,7 +480,7 @@ class Game {
         this.saveHistory();
         const piece = this.board[index];
         piece.isFlipped = true;
-        
+
         // 動態先手決定
         if (this.turn === 'none') {
             this.turn = piece.side; // 當前翻棋回合算作此顏色的回合，endTurn 時會切換給對手
@@ -524,20 +524,20 @@ class Game {
 
     // 取得當前盤面的字串特徵，用於禁手判定
     hashBoard() {
-        return this.board.map(p => p ? `${p.side[0]}${p.type}${p.isFlipped?1:0}` : '0').join('');
+        return this.board.map(p => p ? `${p.side[0]}${p.type}${p.isFlipped ? 1 : 0}` : '0').join('');
     }
 
     // 禁手：模擬移動後檢查是否重複 3 次
     checkRepetition(from, to) {
         // 先暫存當前盤面
         const originalBoard = JSON.parse(JSON.stringify(this.board));
-        
+
         // 模擬執行移動或吃子
         this.board[to] = this.board[from];
         this.board[from] = null;
-        
+
         const nextStateHash = this.hashBoard();
-        
+
         // 還原盤面
         this.board = originalBoard;
 
@@ -677,10 +677,10 @@ class Game {
         this.board[to] = this.board[from];
         this.board[from] = null;
         this.deselect();
-        
+
         this.lastMovedTo = to;
         this.stateHistory.push(this.hashBoard());
-        
+
         this.renderBoard();
         this.playSound('move');
     }
@@ -762,10 +762,10 @@ class Game {
         this.board[from] = null;
 
         this.deselect();
-        
+
         this.stateHistory = []; // 吃子後無法復原狀態，清空歷史
         this.lastMovedTo = to;
-        
+
         this.renderBoard();
         this.playSound('capture');
         this.checkWin();
@@ -825,10 +825,10 @@ class Game {
 
         this.isWaitingForRetreat = false;
         this.retreatData = null;
-        
+
         this.lastMovedTo = victimIdx;
         this.stateHistory.push(this.hashBoard());
-        
+
         this.playSound('move');
         this.renderBoard();
     }
@@ -908,7 +908,7 @@ class Game {
     updateStatus() {
         const indicator = document.getElementById('turn-indicator');
         const text = indicator.querySelector('.turn-text');
-        
+
         if (this.turn === 'none') {
             indicator.className = 'turn-none';
             text.innerText = '請翻開第一顆棋子';
