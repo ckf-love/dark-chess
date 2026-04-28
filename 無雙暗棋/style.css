@@ -431,6 +431,8 @@ main {
 .controls {
     display: flex;
     gap: 15px;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 
 .btn {
@@ -441,11 +443,18 @@ main {
     font-family: inherit;
     font-weight: 600;
     transition: all 0.2s;
+    white-space: nowrap;
 }
 
 .btn.primary { background: #4e54c8; color: white; }
 .btn.secondary { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); }
 .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+
+#export-log-btn:hover {
+    border-color: #4ade80;
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
+}
 
 /* 彈窗 */
 .modal {

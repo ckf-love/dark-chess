@@ -40,6 +40,7 @@ class Game {
         this.selectedPieceDef = null;
         this.sandboxEraseMode = false;
         this.isFromSandbox = false; // 是否由沙盒載入
+        this.gameLogs = []; // 對局紀錄日誌
 
         this.init();
     }
@@ -47,6 +48,7 @@ class Game {
     init() {
         this.setupEventListeners();
         this.initMenuListeners();
+        this.initExportListener();
         this.updateStatus();
     }
 
@@ -192,6 +194,7 @@ class Game {
         this.updateStatus();
         this.updateGraveyard();
         this.showPage('main-game');
+        this.addLog('start');
     }
 
     saveHistory() {
@@ -213,6 +216,7 @@ class Game {
 
     undo() {
         if (this.isWaitingForAI || this.history.length === 0) return;
+        this.addLog('undo');
 
         const restore = () => {
             const lastState = JSON.parse(this.history.pop());
@@ -481,6 +485,7 @@ class Game {
         this.saveHistory();
         const piece = this.board[index];
         piece.isFlipped = true;
+        this.addLog('flip', { pieceName: piece.type, index: index });
 
         // 動態先手決定
         if (this.turn === 'none') {
@@ -679,6 +684,7 @@ class Game {
         if (piece.isUpgraded && piece.type === '帥' && Math.abs(r1 - r2) === 1 && Math.abs(c1 - c2) === 1) {
             piece.cooldown = 2; // 設定冷卻 2 (因為 endTurn 會立刻減 1)
         }
+        this.addLog('move', { pieceName: piece.type, from: from, to: to });
 
         this.board[to] = this.board[from];
         this.board[from] = null;
@@ -755,6 +761,7 @@ class Game {
     executeCapture(from, to) {
         const attacker = this.board[from];
         const victim = this.board[to];
+        this.addLog('capture', { attackerName: attacker.type, victimName: victim.type, from: from, to: to });
 
         if (!attacker.isUpgraded) {
             attacker.isUpgraded = true;
@@ -821,6 +828,7 @@ class Game {
 
         const attacker = this.board[attackerIdx];
         const victim = this.board[victimIdx];
+        this.addLog('retreat', { pieceName: victim.type, to: targetIdx });
 
         // 1. 兵後退到逃脫格
         this.board[targetIdx] = victim;
@@ -877,6 +885,7 @@ class Game {
                 if (PIECE_TYPES[extraVictim.type].value < PIECE_TYPES['相'].value) {
                     this.captured[this.board[to].side].push(extraVictim);
                     this.board[trIdx] = null;
+                    this.addLog('capture', { attackerName: '相(重踏)', victimName: extraVictim.type, from: to, to: trIdx });
                     this.playSound('capture');
                     this.showToast('相觸發【重踏】：連帶震碎後方棋子！');
                     this.renderBoard();
@@ -973,9 +982,11 @@ class Game {
         if (redLeft === 0) {
             alert('黑方勝利！');
             this.isGameOver = true;
+            this.addLog('win', { winner: 'black' });
         } else if (blackLeft === 0) {
             alert('紅方勝利！');
             this.isGameOver = true;
+            this.addLog('win', { winner: 'red' });
         }
     }
 
@@ -1664,6 +1675,73 @@ class Game {
             };
         }
         this.renderSandboxBoard();
+    }
+
+    // ===== 對局紀錄系統 =====
+    getCoord(index) {
+        const { r, c } = this.getRC(index);
+        return `(${r},${c})`;
+    }
+
+    addLog(action, details = {}) {
+        const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+        let turnText = this.turn === 'red' ? '🔴紅方' : (this.turn === 'black' ? '⚫黑方' : '⚙️系統');
+        let msg = `[${time}] ${turnText}: `;
+
+        switch (action) {
+            case 'start':
+                msg = `[${time}] 🎮 遊戲開始 - 模式: ${this.gameMode}, 難度: ${this.getDiffName(this.aiDifficulty)}`;
+                this.gameLogs = [msg];
+                break;
+            case 'flip':
+                msg += `翻開棋子 ${details.pieceName} 於 ${this.getCoord(details.index)}`;
+                break;
+            case 'move':
+                msg += `將 ${details.pieceName} 從 ${this.getCoord(details.from)} 移動到 ${this.getCoord(details.to)}`;
+                break;
+            case 'capture':
+                msg += `以 ${details.attackerName} 吃掉 ${details.victimName} (${this.getCoord(details.from)} -> ${this.getCoord(details.to)})`;
+                break;
+            case 'retreat':
+                msg += `${details.pieceName} 撤退到 ${this.getCoord(details.to)}`;
+                break;
+            case 'undo':
+                msg = `[${time}] ⏪ [悔棋] 撤回上一手`;
+                break;
+            case 'win':
+                msg = `[${time}] 🏆 遊戲結束 - ${details.winner === 'red' ? '紅方' : '黑方'} 勝利！`;
+                break;
+            default:
+                return;
+        }
+        this.gameLogs.push(msg);
+        console.log(msg);
+    }
+
+    initExportListener() {
+        const btn = document.getElementById('export-log-btn');
+        if (btn) {
+            btn.onclick = () => this.exportGameLog();
+        }
+    }
+
+    exportGameLog() {
+        if (this.gameLogs.length === 0) {
+            this.showToast ? this.showToast('尚無紀錄可匯出') : alert('尚無紀錄可匯出');
+            return;
+        }
+        const content = this.gameLogs.join('\r\n');
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const now = new Date();
+        const filename = `DarkChess_Log_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}.txt`;
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 }
 
