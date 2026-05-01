@@ -26,7 +26,7 @@
             </div>
             <!-- 版本號顯示 -->
             <div id="version-display" style="margin-top: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.4); letter-spacing: 2px;">
-                V 1.2
+                V 1.3
             </div>
         </section>
 
@@ -47,6 +47,14 @@
                     <div class="palette-section">
                         <div class="palette-side-label black-label">⚫ 黑方</div>
                         <div class="palette-pieces" id="black-palette"></div>
+                    </div>
+                    <div class="palette-divider"></div>
+                    <div class="palette-section" style="gap: 5px;">
+                        <label style="font-size: 0.75rem; opacity: 0.7;">載入後模式：</label>
+                        <select id="sandbox-game-mode" class="btn secondary" style="width: 100%; font-size: 0.8rem; padding: 5px; height: auto;">
+                            <option value="pvp" selected>人 vs 人</option>
+                            <option value="pve">人 vs AI</option>
+                        </select>
                     </div>
                     <div class="palette-tools">
                         <button id="palette-eraser" class="btn secondary">🗑️ 橡皮擦</button>

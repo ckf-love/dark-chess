@@ -380,8 +380,20 @@ class Game {
                 // 將所有兵的退避回合重置
                 this.board.forEach(p => { if (p) p.retreatHitTurn = -1; });
 
+                // 根據沙盒設定決定模式
+                this.gameMode = document.getElementById('sandbox-game-mode').value;
+                
                 this.turn = 'red';
                 this.playerSide = 'red'; // 預設沙盒載入後玩家為紅方
+                
+                // 如果是人機模式，設定 AI 難度（預設業餘）
+                if (this.gameMode === 'pve') {
+                    this.aiDifficulty = 'amateur';
+                }
+
+                document.getElementById('game-mode-display').innerText =
+                    this.gameMode === 'pvp' ? '人 vs 人' : `人 vs AI (${this.getDiffName(this.aiDifficulty)})`;
+
                 this.selectedTile = null;
                 this.history = [];
                 this.stateHistory = [];
@@ -524,7 +536,7 @@ class Game {
 
         // 禁手規則 2：長追限制
         if (this.checkLongChase(from, to)) {
-            this.showRepetitionWarning('長追警告：不可連續追逐同一棋子超過 3 次！');
+            this.showRepetitionWarning('禁止重複追殺同一顆棋');
             return false;
         }
 
@@ -732,7 +744,7 @@ class Game {
                 if (history[i] === currentPair) consecutive++;
                 else break;
             }
-            if (consecutive >= 2) return true; // 已經追了 2 次，這次是第 3 次
+            if (consecutive >= 5) return true; // 已經追了 5 次，這次是第 6 次
         }
         return false;
     }
@@ -810,9 +822,10 @@ class Game {
         this.updateChaseHistory(attacker.side, from, to);
 
         // 相/象的重踏技能：必須是吃子前就已升級才能觸發
+        // 修正：確保判定獨立且在動作完成後第一時間執行
         if (wasAlreadyUpgraded && attacker.type === '相' && attacker.cooldown === 0) {
             this.handleElephantTrample(from, to);
-            attacker.cooldown = 2; // 重踏也是特殊技能
+            attacker.cooldown = 2; 
         }
         return 'done';
     }
