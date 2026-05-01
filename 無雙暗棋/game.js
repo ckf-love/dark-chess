@@ -719,11 +719,11 @@ class Game {
                 if (retreatResult === 'pending') {
                     if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
                     return 'pending'; // 暫停回合等待選擇
-                } else if (retreatResult === 'done') {
+                } else if (retreatResult === 'done' || retreatResult === 'blocked') {
                     if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
-                    return 'done'; // AI 瞬間撤退完畢
+                    return 'done'; // 撤退完畢或原地擋下
                 }
-                // 若回傳 'killed' 代表無路可退，繼續執行底下的吃子
+                // 若回傳 'killed' 代表無路可退（且非首次受傷，雖然目前邏輯首次必存活），繼續執行底下的吃子
             }
             // 若 retreatHitTurn !== -1 代表連續被打，直接執行底下的吃子
         }
@@ -799,9 +799,9 @@ class Game {
             return this.board[nIdx] === null || nIdx === from;
         }).map(n => n.r * BOARD_COLS + n.c);
 
-        if (emptySlots.length > 0) {
-            victim.retreatHitTurn = this.turnCount; // 記錄這次受傷的回合
+        victim.retreatHitTurn = this.turnCount; // 記錄這次受傷的回合
 
+        if (emptySlots.length > 0) {
             // 判斷是否由玩家手動操作
             const isInteractive = (this.gameMode === 'pvp' || victim.side === this.playerSide);
 
@@ -818,7 +818,11 @@ class Game {
                 return 'done'; // 自動完成
             }
         } else {
-            return 'killed'; // 無路可退
+            // 修復：無路可退時，原地消耗生命但不被吃
+            this.showToast('兵卒無路可退，原地消耗一次生命！');
+            this.playSound('move');
+            this.renderBoard();
+            return 'blocked'; 
         }
     }
 
@@ -869,28 +873,41 @@ class Game {
     }
 
     handleElephantTrample(from, to) {
-        const { r: r1, c: c1 } = this.getRC(from);
-        const { r: r2, c: c2 } = this.getRC(to);
-        const dr = r2 - r1;
-        const dc = c2 - c1;
-        const tr = r2 + dr;
-        const tc = c2 + dc;
+        const { r, c } = this.getRC(to);
+        const attacker = this.board[to];
+        if (!attacker) return;
+        
+        let trampleCount = 0;
 
-        if (tr >= 0 && tr < BOARD_ROWS && tc >= 0 && tc < BOARD_COLS) {
-            const trIdx = tr * BOARD_COLS + tc;
-            const extraVictim = this.board[trIdx];
-            // 修改：必須是已翻開的棋子才能被重踏
-            if (extraVictim && extraVictim.isFlipped && extraVictim.side !== this.board[to].side) {
-                // 檢查是否為低階棋子 (比較等級)
-                if (PIECE_TYPES[extraVictim.type].value < PIECE_TYPES['相'].value) {
-                    this.captured[this.board[to].side].push(extraVictim);
-                    this.board[trIdx] = null;
-                    this.addLog('capture', { attackerName: '相(重踏)', victimName: extraVictim.type, from: to, to: trIdx });
-                    this.playSound('capture');
-                    this.showToast('相觸發【重踏】：連帶震碎後方棋子！');
-                    this.renderBoard();
+        // 檢查周圍 8 格 (相鄰所有方向)
+        for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+                if (dr === 0 && dc === 0) continue;
+                const tr = r + dr;
+                const tc = c + dc;
+
+                if (tr >= 0 && tr < BOARD_ROWS && tc >= 0 && tc < BOARD_COLS) {
+                    const trIdx = tr * BOARD_COLS + tc;
+                    const extraVictim = this.board[trIdx];
+                    
+                    // 必須是已翻開的敵對棋子，且等級低於 相 (5)
+                    if (extraVictim && extraVictim.isFlipped && extraVictim.side !== attacker.side) {
+                        if (PIECE_TYPES[extraVictim.type].value < PIECE_TYPES['相'].value) {
+                            this.captured[attacker.side].push(extraVictim);
+                            this.board[trIdx] = null;
+                            this.addLog('capture', { attackerName: '相(重踏)', victimName: extraVictim.type, from: to, to: trIdx });
+                            trampleCount++;
+                        }
+                    }
                 }
             }
+        }
+
+        if (trampleCount > 0) {
+            this.playSound('capture');
+            this.showToast(`相觸發【重踏】：連帶震碎周圍 ${trampleCount} 顆棋子！`);
+            this.renderBoard();
+            this.checkWin();
         }
     }
 
@@ -1447,7 +1464,7 @@ class Game {
         const pieces = [
             { type: '帥', skill: '威震八方', desc: '可對角線移動/吃子（1格），不可吃兵。', demo: 'diagonal' },
             { type: '仕', skill: '越級刺殺', desc: '僅限對角線「越級」吃子。不可直線吃子或單純對角線移動。', demo: 'assassin' },
-            { type: '相', skill: '重踏', desc: '吃子後，連帶震碎目標後方的低階已翻開敵棋。', demo: 'trample' },
+            { type: '相', skill: '重踏', desc: '吃子後，連帶震碎目標周圍相鄰的低階已翻開敵棋。', demo: 'trample' },
             { type: '俥', skill: '衝鋒', desc: '直線衝刺越級吃子，不可用於單純移動。', demo: 'rush' },
             { type: '傌', skill: '凌空', desc: '跳過相鄰的一顆棋子越級吃子，不可用於單純移動。', demo: 'leap' },
             { type: '砲', skill: '神砲', desc: '可一次飛越多顆棋子進行遠程打擊。', demo: 'supercannon' },
@@ -1493,6 +1510,9 @@ class Game {
         victim.innerText = (type === '帥') ? '卒' : '帥'; // 示範目標
 
         const run = () => {
+            // 清理上一次循環可能留下的額外棋子
+            board.querySelectorAll('.demo-piece-extra').forEach(p => p.remove());
+
             // 重置位置
             if (demoType === 'diagonal') {
                 this.setDemoPos(attacker, tiles[8]);
@@ -1500,7 +1520,7 @@ class Game {
                 setTimeout(() => this.setDemoPos(attacker, tiles[4]), 1000);
             } else if (demoType === 'leap') {
                 const hurdle = document.createElement('div');
-                hurdle.className = 'demo-piece black'; hurdle.innerText = '兵';
+                hurdle.className = 'demo-piece black demo-piece-extra'; hurdle.innerText = '兵';
                 this.setDemoPos(attacker, tiles[6]);
                 this.setDemoPos(hurdle, tiles[7]);
                 this.setDemoPos(victim, tiles[8]);
@@ -1515,6 +1535,21 @@ class Game {
                 setTimeout(() => {
                     this.setDemoPos(attacker, tiles[0]);
                     victim.style.opacity = '0';
+                }, 1000);
+            } else if (demoType === 'trample') {
+                const victim2 = document.createElement('div');
+                victim2.className = 'demo-piece black demo-piece-extra'; victim2.innerText = '兵';
+                board.appendChild(victim2);
+                this.setDemoPos(attacker, tiles[8]);
+                this.setDemoPos(victim, tiles[7]);
+                this.setDemoPos(victim2, tiles[4]);
+                setTimeout(() => {
+                    this.setDemoPos(attacker, tiles[7]);
+                    victim.style.opacity = '0';
+                    victim2.style.opacity = '0';
+                    // 震動效果
+                    board.style.animation = 'none';
+                    requestAnimationFrame(() => board.style.animation = 'shake 0.3s');
                 }, 1000);
             } else {
                 // 簡化通用演示
