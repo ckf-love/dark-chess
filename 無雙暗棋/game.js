@@ -41,6 +41,7 @@ class Game {
         this.sandboxEraseMode = false;
         this.isFromSandbox = false; // 是否由沙盒載入
         this.gameLogs = []; // 對局紀錄日誌
+        this.chaseHistory = { red: [], black: [] }; // 追逐歷史紀錄 { side: ["chaserId->victimId", ...] }
 
         this.init();
     }
@@ -181,6 +182,7 @@ class Game {
         this.selectedTile = null;
         this.history = [];
         this.stateHistory = [];
+        this.chaseHistory = { red: [], black: [] };
         this.turnCount = 0;
         this.lastMovedTo = null;
         this.isWaitingForRetreat = false;
@@ -205,6 +207,7 @@ class Game {
             captured: this.captured,
             isGameOver: this.isGameOver,
             stateHistory: this.stateHistory,
+            chaseHistory: JSON.parse(JSON.stringify(this.chaseHistory)),
             turnCount: this.turnCount,
             lastMovedTo: this.lastMovedTo,
             isWaitingForRetreat: this.isWaitingForRetreat,
@@ -225,6 +228,7 @@ class Game {
             this.captured = lastState.captured;
             this.isGameOver = lastState.isGameOver;
             this.stateHistory = lastState.stateHistory;
+            this.chaseHistory = lastState.chaseHistory;
             this.turnCount = lastState.turnCount;
             this.lastMovedTo = lastState.lastMovedTo;
             this.isWaitingForRetreat = lastState.isWaitingForRetreat;
@@ -262,6 +266,7 @@ class Game {
                 const displayChar = this.getChar(type, side);
                 for (let i = 0; i < count; i++) {
                     pieces.push({
+                        id: `${side}-${type}-${i}`, // 賦予唯一 ID 用於追逐判定
                         type: type,
                         char: displayChar,
                         side: side,
@@ -283,6 +288,7 @@ class Game {
         this.board = pieces;
         this.turn = 'none'; // 動態決定先手
         this.stateHistory = [];
+        this.chaseHistory = { red: [], black: [] };
         this.turnCount = 0;
         this.lastMovedTo = null;
         this.isWaitingForRetreat = false;
@@ -379,6 +385,7 @@ class Game {
                 this.selectedTile = null;
                 this.history = [];
                 this.stateHistory = [];
+                this.chaseHistory = { red: [], black: [] };
                 this.turnCount = 0;
                 this.lastMovedTo = null;
                 this.isWaitingForRetreat = false;
@@ -497,6 +504,7 @@ class Game {
         }
 
         this.stateHistory = []; // 翻棋後重置狀態紀錄 (無法重複)
+        this.chaseHistory = { red: [], black: [] }; // 翻棋後重置追逐紀錄
         this.renderBoard();
         this.playSound('flip');
     }
@@ -510,7 +518,13 @@ class Game {
 
         // 禁手規則：同樣棋盤狀態不得出現 3 次
         if (this.checkRepetition(from, to)) {
-            this.showRepetitionWarning(from, to);
+            this.showRepetitionWarning('同樣的盤面已連續出現 3 次！<br>不可再重複此棋步，請改走其他棋路。');
+            return false;
+        }
+
+        // 禁手規則 2：長追限制
+        if (this.checkLongChase(from, to)) {
+            this.showRepetitionWarning('長追警告：不可連續追逐同一棋子超過 3 次！');
             return false;
         }
 
@@ -558,8 +572,9 @@ class Game {
     }
 
     // 禁手：顯示警告彈窗
-    showRepetitionWarning(from, to) {
+    showRepetitionWarning(msg) {
         const modal = document.getElementById('repetition-modal');
+        document.getElementById('repetition-msg').innerHTML = msg;
         modal.classList.remove('hidden');
         // 重置動畫
         const content = modal.querySelector('.modal-content');
@@ -675,6 +690,65 @@ class Game {
         return PIECE_TYPES[p1.type].value >= PIECE_TYPES[p2.type].value;
     }
 
+    // 更新追逐歷史
+    updateChaseHistory(side, moveFrom, moveTo) {
+        const piece = this.board[moveTo];
+        if (!piece) {
+            this.chaseHistory[side] = [];
+            return;
+        }
+
+        const threats = this.getThreatenedPieceIds(moveTo);
+        if (threats.length > 0) {
+            // 記錄「誰」在追「誰」
+            // 為了簡化，若威脅多個，只記錄第一個
+            this.chaseHistory[side].push(`${piece.id}->${threats[0]}`);
+            // 只保留最近 5 次紀錄即可
+            if (this.chaseHistory[side].length > 5) this.chaseHistory[side].shift();
+        } else {
+            this.chaseHistory[side] = [];
+        }
+    }
+
+    checkLongChase(from, to) {
+        const piece = this.board[from];
+        const side = piece.side;
+
+        // 模擬移動
+        const tempTo = this.board[to];
+        this.board[to] = piece;
+        this.board[from] = null;
+        const threats = this.getThreatenedPieceIds(to);
+        this.board[from] = piece;
+        this.board[to] = tempTo;
+
+        if (threats.length === 0) return false;
+
+        const history = this.chaseHistory[side];
+        for (const victimId of threats) {
+            let consecutive = 0;
+            const currentPair = `${piece.id}->${victimId}`;
+            for (let i = history.length - 1; i >= 0; i--) {
+                if (history[i] === currentPair) consecutive++;
+                else break;
+            }
+            if (consecutive >= 2) return true; // 已經追了 2 次，這次是第 3 次
+        }
+        return false;
+    }
+
+    getThreatenedPieceIds(index) {
+        const piece = this.board[index];
+        const threats = [];
+        for (let i = 0; i < 32; i++) {
+            const target = this.board[i];
+            if (target && target.isFlipped && target.side !== piece.side) {
+                if (this.canCapture(index, i)) threats.push(target.id);
+            }
+        }
+        return threats;
+    }
+
     movePiece(from, to) {
         this.saveHistory();
         const piece = this.board[from];
@@ -692,6 +766,7 @@ class Game {
 
         this.lastMovedTo = to;
         this.stateHistory.push(this.hashBoard());
+        this.updateChaseHistory(piece.side, from, to);
 
         this.renderBoard();
         this.playSound('move');
@@ -731,6 +806,8 @@ class Game {
         // 執行吃子
         this.executeCapture(from, to);
         if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
+
+        this.updateChaseHistory(attacker.side, from, to);
 
         // 相/象的重踏技能：必須是吃子前就已升級才能觸發
         if (wasAlreadyUpgraded && attacker.type === '相' && attacker.cooldown === 0) {
@@ -842,6 +919,7 @@ class Game {
 
         this.lastMovedTo = victimIdx;
         this.stateHistory.push(this.hashBoard());
+        this.updateChaseHistory(victim.side, victimIdx, targetIdx); // 兵卒撤退後的反擊潛力（雖然少見但需更新歷史）
 
         this.playSound('move');
         this.renderBoard();
