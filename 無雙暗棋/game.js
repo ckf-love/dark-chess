@@ -886,7 +886,7 @@ class Game {
         const emptySlots = neighbors.filter(n => {
             if (n.r < 0 || n.r >= BOARD_ROWS || n.c < 0 || n.c >= BOARD_COLS) return false;
             const nIdx = n.r * BOARD_COLS + n.c;
-            return this.board[nIdx] === null || nIdx === from;
+            return this.board[nIdx] === null;
         }).map(n => n.r * BOARD_COLS + n.c);
 
         victim.retreatHitTurn = this.turnCount; // 記錄這次受傷的回合
