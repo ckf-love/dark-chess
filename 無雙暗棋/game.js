@@ -1706,6 +1706,7 @@ class Game {
                 isFlipped: true,
                 isUpgraded: false,
                 cooldown: 0,
+                retreatHitTurn: -1, // 修復：初始化受傷紀錄，否則會直接死亡
                 livesLeft: this.selectedPieceDef.type === '兵' ? 1 : 0
             };
         }
