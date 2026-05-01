@@ -516,7 +516,7 @@ class Game {
         }
 
         this.stateHistory = []; // 翻棋後重置狀態紀錄 (無法重複)
-        this.chaseHistory = { red: [], black: [] }; // 翻棋後重置追逐紀錄
+        this.resetChaseHistory(); // 翻棋後重置追逐紀錄
         this.renderBoard();
         this.playSound('flip');
     }
@@ -722,6 +722,10 @@ class Game {
         }
     }
 
+    resetChaseHistory() {
+        this.chaseHistory = { red: [], black: [] };
+    }
+
     checkLongChase(from, to) {
         const piece = this.board[from];
         const side = piece.side;
@@ -819,6 +823,8 @@ class Game {
         this.executeCapture(from, to);
         if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
 
+        // 吃子屬於重大盤面變動，重置長追紀錄
+        this.resetChaseHistory();
         this.updateChaseHistory(attacker.side, from, to);
 
         // 相/象的重踏技能：必須是吃子前就已升級才能觸發
@@ -932,6 +938,8 @@ class Game {
 
         this.lastMovedTo = victimIdx;
         this.stateHistory.push(this.hashBoard());
+        // 撤退亦涉及盤面位置大幅變動，重置長追紀錄
+        this.resetChaseHistory();
         this.updateChaseHistory(victim.side, victimIdx, targetIdx); // 兵卒撤退後的反擊潛力（雖然少見但需更新歷史）
 
         this.playSound('move');
