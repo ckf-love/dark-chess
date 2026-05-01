@@ -719,11 +719,11 @@ class Game {
                 if (retreatResult === 'pending') {
                     if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
                     return 'pending'; // 暫停回合等待選擇
-                } else if (retreatResult === 'done' || retreatResult === 'blocked') {
+                } else if (retreatResult === 'done') {
                     if (wasAlreadyUpgraded && isSpecialMove) attacker.cooldown = 2;
-                    return 'done'; // 撤退完畢或原地擋下
+                    return 'done'; // AI 瞬間撤退完畢
                 }
-                // 若回傳 'killed' 代表無路可退（且非首次受傷，雖然目前邏輯首次必存活），繼續執行底下的吃子
+                // 若回傳 'killed' 代表無路可退，繼續執行底下的吃子
             }
             // 若 retreatHitTurn !== -1 代表連續被打，直接執行底下的吃子
         }
@@ -818,11 +818,7 @@ class Game {
                 return 'done'; // 自動完成
             }
         } else {
-            // 修復：無路可退時，原地消耗生命但不被吃
-            this.showToast('兵卒無路可退，原地消耗一次生命！');
-            this.playSound('move');
-            this.renderBoard();
-            return 'blocked'; 
+            return 'killed'; // 無路可退
         }
     }
 
