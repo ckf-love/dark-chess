@@ -535,8 +535,9 @@ class Game {
         }
 
         // 禁手規則 2：長追限制
-        if (this.checkLongChase(from, to)) {
-            this.showRepetitionWarning('禁止重複追殺同一顆棋');
+        const chasedPieceName = this.checkLongChase(from, to);
+        if (chasedPieceName) {
+            this.showRepetitionWarning(`禁止重複追殺同一顆棋 (${chasedPieceName})`);
             return false;
         }
 
@@ -738,7 +739,7 @@ class Game {
         this.board[from] = piece;
         this.board[to] = tempTo;
 
-        if (threats.length === 0) return false;
+        if (threats.length === 0) return null;
 
         const history = this.chaseHistory[side];
         for (const victimId of threats) {
@@ -748,9 +749,19 @@ class Game {
                 if (history[i] === currentPair) consecutive++;
                 else break;
             }
-            if (consecutive >= 5) return true; // 已經追了 5 次，這次是第 6 次
+            if (consecutive >= 5) {
+                const victim = this.getPieceById(victimId);
+                return victim ? victim.type : "棋子";
+            }
         }
-        return false;
+        return null;
+    }
+
+    getPieceById(id) {
+        for (let i = 0; i < 32; i++) {
+            if (this.board[i] && this.board[i].id === id) return this.board[i];
+        }
+        return null;
     }
 
     getThreatenedPieceIds(index) {
