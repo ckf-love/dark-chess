@@ -953,29 +953,30 @@ class Game {
         
         let trampleCount = 0;
 
-        // 檢查周圍 8 格 (相鄰所有方向)
-        for (let dr = -1; dr <= 1; dr++) {
-            for (let dc = -1; dc <= 1; dc++) {
-                if (dr === 0 && dc === 0) continue;
-                const tr = r + dr;
-                const tc = c + dc;
+        // 修正：僅檢查上下左右 4 格 (十字方向)
+        const neighbors = [
+            { dr: -1, dc: 0 }, { dr: 1, dc: 0 }, { dr: 0, dc: -1 }, { dr: 0, dc: 1 }
+        ];
 
-                if (tr >= 0 && tr < BOARD_ROWS && tc >= 0 && tc < BOARD_COLS) {
-                    const trIdx = tr * BOARD_COLS + tc;
-                    const extraVictim = this.board[trIdx];
-                    
-                    // 必須是已翻開的敵對棋子，且等級低於 相 (5)
-                    if (extraVictim && extraVictim.isFlipped && extraVictim.side !== attacker.side) {
-                        if (PIECE_TYPES[extraVictim.type].value < PIECE_TYPES['相'].value) {
-                            this.captured[attacker.side].push(extraVictim);
-                            this.board[trIdx] = null;
-                            this.addLog('capture', { attackerName: '相(重踏)', victimName: extraVictim.type, from: to, to: trIdx });
-                            trampleCount++;
-                        }
+        neighbors.forEach(n => {
+            const tr = r + n.dr;
+            const tc = c + n.dc;
+
+            if (tr >= 0 && tr < BOARD_ROWS && tc >= 0 && tc < BOARD_COLS) {
+                const trIdx = tr * BOARD_COLS + tc;
+                const extraVictim = this.board[trIdx];
+                
+                // 必須是已翻開的敵對棋子，且等級低於 相 (5)
+                if (extraVictim && extraVictim.isFlipped && extraVictim.side !== attacker.side) {
+                    if (PIECE_TYPES[extraVictim.type].value < PIECE_TYPES['相'].value) {
+                        this.captured[attacker.side].push(extraVictim);
+                        this.board[trIdx] = null;
+                        this.addLog('capture', { attackerName: '相(重踏)', victimName: extraVictim.type, from: to, to: trIdx });
+                        trampleCount++;
                     }
                 }
             }
-        }
+        });
 
         if (trampleCount > 0) {
             this.playSound('capture');
