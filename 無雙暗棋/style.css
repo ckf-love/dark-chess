@@ -50,11 +50,16 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 50px;
+    justify-content: center;
+    gap: clamp(16px, 3.4vh, 40px);
     animation: fadeInScale 0.8s cubic-bezier(0.4, 0, 0.2, 1);
     width: 100%;
     max-width: 500px;
+    max-height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
 }
+#start-page::-webkit-scrollbar { display: none; }
 
 @keyframes fadeInScale {
     from { opacity: 0; transform: scale(0.9); }
@@ -65,19 +70,103 @@ body {
     text-align: center;
 }
 
-.hero-header h1 {
-    font-family: var(--font-serif);
-    font-size: clamp(2.5rem, 18vw, 5rem);
-    letter-spacing: clamp(5px, 2vw, 15px);
-    background: linear-gradient(to bottom, #fff 20%, #ffd700 50%, #b8860b 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.3));
-    margin-bottom: 10px;
-    text-shadow: none;
-    white-space: nowrap;
-    width: 100%;
+/* 主選單暗黑水墨背景（國士無雙之暗棋） */
+.start-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at 50% 36%, rgba(255, 195, 80, 0.20), rgba(0, 0, 0, 0) 40%),
+        radial-gradient(circle at 50% 42%, rgba(70, 48, 24, 0.55), rgba(8, 6, 4, 0.97) 72%),
+        #080604;
 }
+.start-backdrop::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 36%;
+    transform: translate(-50%, -50%);
+    width: min(78vw, 540px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 215, 0, 0.06);
+    box-shadow: inset 0 0 90px rgba(255, 180, 60, 0.10), 0 0 70px rgba(0, 0, 0, 0.7);
+    filter: blur(1px);
+}
+
+/* 燙金書法標題 */
+.hero-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.hero-header h1.hero-main {
+    font-family: var(--font-serif);
+    font-weight: 900;
+    font-size: clamp(2.8rem, 17vw, 5.4rem);
+    letter-spacing: clamp(4px, 2.2vw, 16px);
+    background: linear-gradient(180deg, #fff7d6 0%, #ffe27a 32%, #e7a93a 62%, #a96f1a 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 26px rgba(255, 180, 60, 0.45));
+    white-space: nowrap;
+    line-height: 1.05;
+    margin: 0;
+}
+.hero-zhi {
+    font-family: var(--font-serif);
+    font-size: clamp(0.95rem, 4vw, 1.35rem);
+    color: #ffe27a;
+    width: 2.3em;
+    height: 2.3em;
+    line-height: 2.2em;
+    text-align: center;
+    border: 1px solid rgba(255, 215, 0, 0.35);
+    border-radius: 50%;
+    filter: drop-shadow(0 0 8px rgba(255, 180, 60, 0.4));
+}
+.hero-second {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: clamp(1.4rem, 7vw, 2.4rem);
+    letter-spacing: clamp(6px, 3vw, 18px);
+    background: linear-gradient(180deg, #fff3cf, #ecb74a 60%, #b9831f);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    filter: drop-shadow(0 0 14px rgba(255, 180, 60, 0.4));
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.hero-second .arr {
+    color: rgba(255, 215, 0, 0.5);
+    -webkit-text-fill-color: rgba(255, 215, 0, 0.5);
+    font-size: 0.45em;
+    font-style: normal;
+}
+
+/* 技能卡標記：僅限吃子 / 可移動 / 免升級 */
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -6px; }
+.tag-cap, .tag-move, .tag-free {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 5px;
+    letter-spacing: 1px;
+}
+.tag-cap { background: rgba(211, 47, 47, 0.85); color: #fff; }
+.tag-move { background: rgba(56, 142, 60, 0.9); color: #fff; }
+.tag-free { background: rgba(255, 179, 0, 0.92); color: #3a2a00; }
+
+/* 示範：我方未升級棋子（紅字、無金光） */
+.demo-piece.ally { color: var(--red-piece); border-color: #ddd; }
 
 .hero-subtitle {
     font-size: 1.2rem;

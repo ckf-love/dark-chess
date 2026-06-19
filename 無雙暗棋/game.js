@@ -1807,17 +1807,21 @@ class Game {
             .map(t => `<span class="rank-chip">${t}</span>`).join('<span class="rank-gt">›</span>');
 
         const skills = [
-            { type: '帥', skill: '威震八方', desc: '升級後可沿<b>對角線</b>移動或吃子一格（仍<b>不能吃兵</b>）。' },
-            { type: '仕', skill: '越級刺殺', desc: '可沿<b>對角線越級</b>吃子，連最高階的帥／將也能擒拿。' },
+            { type: '帥', skill: '威震八方', desc: '升級後可沿<b>對角線移動或吃子</b>一格（仍<b>不能吃兵</b>）。', move: true },
+            { type: '仕', skill: '越級刺殺', desc: '可沿<b>對角線越級</b>吃子，連最高階的帥／將也能擒拿。', captureOnly: true },
             { type: '相', skill: '重踏', desc: '吃子後，<b>連帶震碎</b>落點上下左右、階級低於相的已翻敵棋。' },
-            { type: '俥', skill: '衝鋒', desc: '直線路徑<b>無阻隔</b>時，可長驅直入<b>越級</b>吃子。' },
-            { type: '傌', skill: '凌空', desc: '可<b>跳過緊鄰的一顆棋子</b>，於直線上越級攻擊。' },
-            { type: '砲', skill: '神砲', desc: '升級後<b>無視阻隔</b>，可飛越多顆棋子進行遠程轟擊。' },
-            { type: '兵', skill: '埋伏夾擊', desc: '兩隻兵卒同時貼住目標時，可<b>越級</b>吃下被包圍的高階敵棋。' },
+            { type: '俥', skill: '衝鋒', desc: '直線路徑<b>無阻隔</b>時，可長驅直入<b>越級</b>吃子。', captureOnly: true },
+            { type: '傌', skill: '凌空', desc: '可<b>跳過緊鄰的一顆棋子</b>，於直線上越級攻擊。', captureOnly: true },
+            { type: '砲', skill: '神砲', desc: '升級後<b>無視阻隔</b>，可飛越棋子遠程轟擊，並<b>移動到吃子格</b>。', captureOnly: true },
+            { type: '兵', skill: '埋伏夾擊', desc: '<b>兩隻</b>兵卒同時貼住目標，即可<b>越級</b>吃下被包圍的高階敵棋。', noUpgrade: true },
         ];
+        const tagFor = (s) => (s.captureOnly ? '<span class="tag-cap">僅限吃子</span>' : '')
+            + (s.move ? '<span class="tag-move">可移動</span>' : '')
+            + (s.noUpgrade ? '<span class="tag-free">免升級</span>' : '');
         const skillCards = skills.map(s => `
             <div class="guide-card">
                 <h3>${s.type}<span class="skill-tag">${s.skill}</span></h3>
+                <div class="tag-row">${tagFor(s)}</div>
                 <p class="guide-desc">${s.desc}</p>
                 <div class="demo-container"><div class="demo-board" id="demo-${s.type}">${this.createDemoTiles()}</div></div>
                 <div class="demo-caption" id="demo-${s.type}-cap"></div>
@@ -1844,6 +1848,7 @@ class Game {
             <h3 class="section-title">⬆️ 升級覺醒</h3>
             <div class="rule-row"><span class="rule-ic">✨</span><div>任何棋子<b>成功吃子後立即升級</b>（棋身泛金光），解鎖下方對應的專屬技能。</div></div>
             <div class="rule-row"><span class="rule-ic">⏳</span><div>發動特殊技能（斜吃、衝鋒、凌空、神砲等）後會進入<b>冷卻</b>，需間隔一回合才能再用；冷卻中仍可用一般階級壓制吃子。</div></div>
+            <div class="rule-row"><span class="rule-ic">⚔️</span><div><b>技能多為「吃子專用」</b>：除了帥可斜向移動外，<b>仕／俥／傌／砲</b>的特殊招式<b>只能用於吃子</b>，平時移動仍是上下左右一格；而<b>兵的埋伏無需升級</b>即可發動。</div></div>
         </section>
 
         <section class="guide-section">
@@ -1894,11 +1899,11 @@ class Game {
             ]},
             { id: 'demo-砲', steps: [
                 { caption: '神砲無視阻隔，飛越棋子遠程轟擊', hold: 1500, pieces: [P('h', 6, 'gold', '砲'), P('m', 7, 'hurdle', '兵'), P('v', 8, 'enemy', '帥')] },
-                { caption: '轟！遠方敵棋灰飛煙滅', hold: 1700, effect: 'shake', pieces: [P('h', 6, 'gold', '砲'), P('m', 7, 'hurdle', '兵')] },
+                { caption: '轟！砲越子擊殺並移動到該格', hold: 1700, effect: 'shake', pieces: [P('h', 8, 'gold', '砲'), P('m', 7, 'hurdle', '兵')] },
             ]},
             { id: 'demo-兵', steps: [
-                { caption: '兩隻兵卒夾住目標，形成埋伏', hold: 1600, pieces: [P('v', 4, 'enemy', '帥'), P('a', 1, 'gold', '兵'), P('b', 3, 'gold', '兵'), P('h', 5, 'gold', '兵')] },
-                { caption: '埋伏！越級吃下被包圍的敵帥', hold: 1800, pieces: [P('h', 4, 'gold', '兵'), P('a', 1, 'gold', '兵'), P('b', 3, 'gold', '兵')] },
+                { caption: '兩隻兵卒貼住目標即可埋伏（無需升級）', hold: 1600, pieces: [P('v', 4, 'enemy', '帥'), P('a', 1, 'ally', '兵'), P('h', 3, 'ally', '兵')] },
+                { caption: '埋伏！越級吃下被包圍的敵帥', hold: 1800, pieces: [P('h', 4, 'ally', '兵'), P('a', 1, 'ally', '兵')] },
             ]},
             { id: 'demo-撤退', steps: [
                 { caption: '升級的兵遭攻擊，不會立刻陣亡', hold: 1500, pieces: [P('e', 3, 'enemy', '俥'), P('h', 4, 'gold', '兵')] },
