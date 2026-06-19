@@ -1793,36 +1793,118 @@ class Game {
     }
     // --- 玩法說明與動畫系統 ---
     initGuideAnimations() {
-        const guideList = document.getElementById('guide-list');
-        guideList.innerHTML = '';
-
-        const pieces = [
-            { type: '帥', skill: '威震八方', desc: '可對角線移動/吃子（1格），不可吃兵。', demo: 'diagonal' },
-            { type: '仕', skill: '越級刺殺', desc: '僅限對角線「越級」吃子。不可直線吃子或單純對角線移動。', demo: 'assassin' },
-            { type: '相', skill: '重踏', desc: '吃子後，連帶震碎目標周圍相鄰的低階已翻開敵棋。', demo: 'trample' },
-            { type: '俥', skill: '衝鋒', desc: '直線衝刺越級吃子，不可用於單純移動。', demo: 'rush' },
-            { type: '傌', skill: '凌空', desc: '跳過相鄰的一顆棋子越級吃子，不可用於單純移動。', demo: 'leap' },
-            { type: '砲', skill: '神砲', desc: '可一次飛越多顆棋子進行遠程打擊。', demo: 'supercannon' },
-            { type: '兵', skill: '撤退/埋伏', desc: '升級後可撤退一次（需連續攻擊兩次才能擊殺）；兩隻兵夾擊敵棋可越級吃子。', demo: 'ambush' }
-        ];
-
+        this.stopGuideAnimations();           // 清除舊計時器，避免重複進入頁面殘留動畫
         this.guideTimers = [];
+        const guideList = document.getElementById('guide-list');
+        guideList.innerHTML = this.buildGuideHTML();
+        // 啟動所有技能 / 機制示範動畫
+        this.getGuideDemos().forEach(d => this.startFrameDemo(d.id, d.steps));
+    }
 
-        pieces.forEach(p => {
-            const card = document.createElement('div');
-            card.className = 'guide-card';
-            card.innerHTML = `
-                <h3>${p.type} <span class="skill-tag">${p.skill}</span></h3>
-                <p class="guide-desc">${p.desc}</p>
-                <div class="demo-container">
-                    <div class="demo-board" id="demo-${p.type}">
-                        ${this.createDemoTiles()}
-                    </div>
-                </div>
-            `;
-            guideList.appendChild(card);
-            this.startDemo(p.type, p.demo);
-        });
+    // 組建完整玩法解說的 HTML（六大區塊）
+    buildGuideHTML() {
+        const ladder = ['帥', '仕', '相', '俥', '傌', '砲', '兵']
+            .map(t => `<span class="rank-chip">${t}</span>`).join('<span class="rank-gt">›</span>');
+
+        const skills = [
+            { type: '帥', skill: '威震八方', desc: '升級後可沿<b>對角線</b>移動或吃子一格（仍<b>不能吃兵</b>）。' },
+            { type: '仕', skill: '越級刺殺', desc: '可沿<b>對角線越級</b>吃子，連最高階的帥／將也能擒拿。' },
+            { type: '相', skill: '重踏', desc: '吃子後，<b>連帶震碎</b>落點上下左右、階級低於相的已翻敵棋。' },
+            { type: '俥', skill: '衝鋒', desc: '直線路徑<b>無阻隔</b>時，可長驅直入<b>越級</b>吃子。' },
+            { type: '傌', skill: '凌空', desc: '可<b>跳過緊鄰的一顆棋子</b>，於直線上越級攻擊。' },
+            { type: '砲', skill: '神砲', desc: '升級後<b>無視阻隔</b>，可飛越多顆棋子進行遠程轟擊。' },
+            { type: '兵', skill: '埋伏夾擊', desc: '兩隻兵卒同時貼住目標時，可<b>越級</b>吃下被包圍的高階敵棋。' },
+        ];
+        const skillCards = skills.map(s => `
+            <div class="guide-card">
+                <h3>${s.type}<span class="skill-tag">${s.skill}</span></h3>
+                <p class="guide-desc">${s.desc}</p>
+                <div class="demo-container"><div class="demo-board" id="demo-${s.type}">${this.createDemoTiles()}</div></div>
+                <div class="demo-caption" id="demo-${s.type}-cap"></div>
+            </div>`).join('');
+
+        return `
+        <section class="guide-section intro">
+            <h3 class="section-title">🎯 遊戲目標</h3>
+            <p class="guide-desc">輪流行動，率先<b>吃光對方所有棋子</b>者獲勝。每顆棋子吃子後會<b>升級覺醒</b>並解鎖專屬技能，讓戰局瞬息萬變。</p>
+        </section>
+
+        <section class="guide-section">
+            <h3 class="section-title">⚔️ 基本玩法</h3>
+            <div class="rule-row"><span class="rule-ic">🔄</span><div><b>翻棋決定先手</b>：棋盤 8×4＝32 格，棋子背面朝上。你翻開的<b>第一顆棋子</b>顏色，即為你的陣營。</div></div>
+            <div class="rule-row"><span class="rule-ic">➡️</span><div><b>每回合擇一</b>：翻開一顆暗棋，或將己方棋子沿<b>上下左右</b>移動一格。</div></div>
+            <div class="rule-row"><span class="rule-ic">🥋</span><div><b>吃子靠階級</b>：高階可吃同階或更低階——
+                <div class="rank-ladder">${ladder}</div>
+                <div class="rank-note">特例：<b>兵可吃帥</b>（以下犯上）、<b>帥不可吃兵</b>。</div>
+            </div></div>
+            <div class="rule-row"><span class="rule-ic">💥</span><div><b>砲的隔子吃法</b>：未升級的砲需<b>正好隔一顆棋子</b>（隔山打牛）才能直線吃子。</div></div>
+        </section>
+
+        <section class="guide-section">
+            <h3 class="section-title">⬆️ 升級覺醒</h3>
+            <div class="rule-row"><span class="rule-ic">✨</span><div>任何棋子<b>成功吃子後立即升級</b>（棋身泛金光），解鎖下方對應的專屬技能。</div></div>
+            <div class="rule-row"><span class="rule-ic">⏳</span><div>發動特殊技能（斜吃、衝鋒、凌空、神砲等）後會進入<b>冷卻</b>，需間隔一回合才能再用；冷卻中仍可用一般階級壓制吃子。</div></div>
+        </section>
+
+        <section class="guide-section">
+            <h3 class="section-title">✨ 七棋子技能</h3>
+            <div class="skill-grid">${skillCards}</div>
+        </section>
+
+        <section class="guide-section">
+            <h3 class="section-title">🛡️ 特殊機制</h3>
+            <div class="skill-grid"><div class="guide-card">
+                <h3>兵<span class="skill-tag">撤退</span></h3>
+                <p class="guide-desc">升級後的兵被攻擊時，會先<b>撤退</b>到鄰近空格、由攻擊方補上原位；須<b>連續攻擊兩次</b>才能真正擊殺。</p>
+                <div class="demo-container"><div class="demo-board" id="demo-撤退">${this.createDemoTiles()}</div></div>
+                <div class="demo-caption" id="demo-撤退-cap"></div>
+            </div></div>
+        </section>
+
+        <section class="guide-section">
+            <h3 class="section-title">🚫 禁手規則</h3>
+            <div class="rule-row"><span class="rule-ic">♻️</span><div><b>三循環禁手</b>：同一盤面連續出現三次時，不得再走出造成重複的那一步。</div></div>
+            <div class="rule-row"><span class="rule-ic">🎯</span><div><b>長捉禁手</b>：禁止反覆來回追殺同一顆無法逃脫的棋子，必須變著。</div></div>
+        </section>`;
+    }
+
+    // 各示範動畫的影格資料（tile 0-8 對應 3×3 格）
+    getGuideDemos() {
+        const P = (k, t, cls, ch) => ({ k, t, cls, ch });
+        return [
+            { id: 'demo-帥', steps: [
+                { caption: '帥升級後，可沿對角線走或吃一格', hold: 1500, pieces: [P('h', 4, 'gold', '帥'), P('v', 0, 'enemy', '俥')] },
+                { caption: '斜線突襲！吃掉敵俥（仍不能吃兵）', hold: 1700, pieces: [P('h', 0, 'gold', '帥')] },
+            ]},
+            { id: 'demo-仕', steps: [
+                { caption: '仕可沿對角線「越級」擒敵', hold: 1500, pieces: [P('h', 4, 'gold', '仕'), P('v', 0, 'enemy', '帥')] },
+                { caption: '越級刺殺！連敵帥也能拿下', hold: 1700, pieces: [P('h', 0, 'gold', '仕')] },
+            ]},
+            { id: 'demo-相', steps: [
+                { caption: '相吃子後，震碎落點四周的低階敵棋', hold: 1600, pieces: [P('h', 6, 'gold', '相'), P('v', 7, 'enemy', '砲'), P('a', 4, 'enemy', '兵'), P('b', 8, 'enemy', '卒')] },
+                { caption: '重踏！周圍低階敵棋一併粉碎', hold: 1900, effect: 'shake', pieces: [P('h', 7, 'gold', '相')] },
+            ]},
+            { id: 'demo-俥', steps: [
+                { caption: '直線無阻隔時，俥可越級衝鋒', hold: 1500, pieces: [P('h', 6, 'gold', '俥'), P('v', 0, 'enemy', '帥')] },
+                { caption: '衝鋒！長驅直入擒敵', hold: 1700, pieces: [P('h', 0, 'gold', '俥')] },
+            ]},
+            { id: 'demo-傌', steps: [
+                { caption: '傌可跳過緊鄰的一子，越級空襲', hold: 1500, pieces: [P('h', 8, 'gold', '傌'), P('m', 5, 'hurdle', '兵'), P('v', 2, 'enemy', '帥')] },
+                { caption: '凌空！越子擒敵', hold: 1700, pieces: [P('h', 2, 'gold', '傌'), P('m', 5, 'hurdle', '兵')] },
+            ]},
+            { id: 'demo-砲', steps: [
+                { caption: '神砲無視阻隔，飛越棋子遠程轟擊', hold: 1500, pieces: [P('h', 6, 'gold', '砲'), P('m', 7, 'hurdle', '兵'), P('v', 8, 'enemy', '帥')] },
+                { caption: '轟！遠方敵棋灰飛煙滅', hold: 1700, effect: 'shake', pieces: [P('h', 6, 'gold', '砲'), P('m', 7, 'hurdle', '兵')] },
+            ]},
+            { id: 'demo-兵', steps: [
+                { caption: '兩隻兵卒夾住目標，形成埋伏', hold: 1600, pieces: [P('v', 4, 'enemy', '帥'), P('a', 1, 'gold', '兵'), P('b', 3, 'gold', '兵'), P('h', 5, 'gold', '兵')] },
+                { caption: '埋伏！越級吃下被包圍的敵帥', hold: 1800, pieces: [P('h', 4, 'gold', '兵'), P('a', 1, 'gold', '兵'), P('b', 3, 'gold', '兵')] },
+            ]},
+            { id: 'demo-撤退', steps: [
+                { caption: '升級的兵遭攻擊，不會立刻陣亡', hold: 1500, pieces: [P('e', 3, 'enemy', '俥'), P('h', 4, 'gold', '兵')] },
+                { caption: '兵撤退至空格，攻擊方補上原位', hold: 1800, pieces: [P('e', 4, 'enemy', '俥'), P('h', 5, 'gold', '兵')] },
+            ]},
+        ];
     }
 
     createDemoTiles() {
@@ -1831,87 +1913,54 @@ class Game {
         return html;
     }
 
-    startDemo(type, demoType) {
-        const board = document.getElementById(`demo-${type}`);
+    // 影格式示範動畫引擎：依 steps 依序擺放棋子並更新說明文字，循環播放
+    startFrameDemo(id, steps) {
+        const board = document.getElementById(id);
+        if (!board) return;
+        const cap = document.getElementById(id + '-cap');
         const tiles = board.querySelectorAll('.demo-tile');
+        const els = {}; // 以 key 持久化棋子，使其在影格間平滑移動
 
-        // 建立示範棋子
-        const attacker = document.createElement('div');
-        attacker.className = 'demo-piece red gold';
-        attacker.innerText = type;
-
-        const victim = document.createElement('div');
-        victim.className = 'demo-piece black';
-        victim.innerText = (type === '帥') ? '卒' : '帥'; // 示範目標
-
-        const run = () => {
-            // 清理上一次循環可能留下的額外棋子
-            board.querySelectorAll('.demo-piece-extra').forEach(p => p.remove());
-
-            // 重置位置
-            if (demoType === 'diagonal') {
-                this.setDemoPos(attacker, tiles[8]);
-                this.setDemoPos(victim, tiles[4]);
-                setTimeout(() => this.setDemoPos(attacker, tiles[4]), 1000);
-            } else if (demoType === 'leap') {
-                const hurdle = document.createElement('div');
-                hurdle.className = 'demo-piece black demo-piece-extra'; hurdle.innerText = '兵';
-                this.setDemoPos(attacker, tiles[6]);
-                this.setDemoPos(hurdle, tiles[7]);
-                this.setDemoPos(victim, tiles[8]);
-                board.appendChild(hurdle);
-                setTimeout(() => {
-                    this.setDemoPos(attacker, tiles[8]);
-                    victim.style.opacity = '0';
-                }, 1000);
-            } else if (demoType === 'rush') {
-                this.setDemoPos(attacker, tiles[6]);
-                this.setDemoPos(victim, tiles[0]);
-                setTimeout(() => {
-                    this.setDemoPos(attacker, tiles[0]);
-                    victim.style.opacity = '0';
-                }, 1000);
-            } else if (demoType === 'trample') {
-                const victim2 = document.createElement('div');
-                victim2.className = 'demo-piece black demo-piece-extra'; victim2.innerText = '兵';
-                board.appendChild(victim2);
-                this.setDemoPos(attacker, tiles[8]);
-                this.setDemoPos(victim, tiles[7]);
-                this.setDemoPos(victim2, tiles[4]);
-                setTimeout(() => {
-                    this.setDemoPos(attacker, tiles[7]);
-                    victim.style.opacity = '0';
-                    victim2.style.opacity = '0';
-                    // 震動效果
-                    board.style.animation = 'none';
-                    requestAnimationFrame(() => board.style.animation = 'shake 0.3s');
-                }, 1000);
-            } else {
-                // 簡化通用演示
-                this.setDemoPos(attacker, tiles[6]);
-                this.setDemoPos(victim, tiles[3]);
-                setTimeout(() => {
-                    this.setDemoPos(attacker, tiles[3]);
-                    victim.style.opacity = '0';
-                }, 1000);
+        const getEl = (k) => {
+            if (!els[k]) {
+                const e = document.createElement('div');
+                e.className = 'demo-piece';
+                board.appendChild(e);
+                els[k] = e;
             }
-
-            this.guideTimers.push(setTimeout(() => {
-                victim.style.opacity = '1';
-                run();
-            }, 3000));
+            return els[k];
         };
 
-        board.appendChild(attacker);
-        board.appendChild(victim);
-        run();
-    }
+        let frame = 0;
+        const render = () => {
+            const step = steps[frame];
+            if (cap) cap.textContent = step.caption || '';
 
-    setDemoPos(piece, tile) {
-        const rect = tile.getBoundingClientRect();
-        const boardRect = tile.parentElement.getBoundingClientRect();
-        piece.style.left = (tile.offsetLeft) + 'px';
-        piece.style.top = (tile.offsetTop) + 'px';
+            const shown = new Set();
+            (step.pieces || []).forEach(p => {
+                shown.add(p.k);
+                const e = getEl(p.k);
+                const t = tiles[p.t];
+                e.className = 'demo-piece ' + (p.cls || '');
+                e.textContent = p.ch || '';
+                e.style.left = t.offsetLeft + 'px';
+                e.style.top = t.offsetTop + 'px';
+                e.style.width = t.offsetWidth + 'px';
+                e.style.height = t.offsetHeight + 'px';
+                e.style.opacity = '1';
+            });
+            // 未在本影格出現的棋子淡出（表示被吃 / 移走）
+            Object.keys(els).forEach(k => { if (!shown.has(k)) els[k].style.opacity = '0'; });
+
+            if (step.effect === 'shake') {
+                board.style.animation = 'none';
+                requestAnimationFrame(() => { board.style.animation = 'shake 0.4s'; });
+            }
+
+            frame = (frame + 1) % steps.length;
+            this.guideTimers.push(setTimeout(render, step.hold || 1500));
+        };
+        render();
     }
 
     stopGuideAnimations() {

@@ -498,6 +498,8 @@ select {
 #guide-page {
     width: 100%;
     max-width: 900px;
+    max-height: 94dvh;
+    overflow-y: auto;
     background: var(--glass-bg);
     backdrop-filter: blur(20px);
     border-radius: 20px;
@@ -505,6 +507,8 @@ select {
     border: 1px solid var(--glass-border);
     animation: fadeIn 0.4s ease;
 }
+#guide-page::-webkit-scrollbar { width: 8px; }
+#guide-page::-webkit-scrollbar-thumb { background: rgba(255,215,0,0.25); border-radius: 4px; }
 
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(20px); }
@@ -521,9 +525,9 @@ select {
 }
 
 #guide-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
 }
 
 .guide-card {
@@ -642,10 +646,116 @@ select {
 .demo-piece.black { color: var(--black-piece); }
 .demo-piece.gold { border-color: #ffd700; box-shadow: var(--gold-glow); }
 
+/* ===== 玩法說明 V1.9 重製樣式 ===== */
+.guide-section {
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 18px 20px;
+}
+.guide-section.intro {
+    background: linear-gradient(135deg, rgba(78, 84, 200, 0.25), rgba(255, 215, 0, 0.08));
+    border-color: rgba(255, 215, 0, 0.25);
+}
+.section-title {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    color: #ffd700;
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 215, 0, 0.18);
+}
+.rule-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 7px 0;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #ddd;
+}
+.rule-row + .rule-row { border-top: 1px dashed rgba(255, 255, 255, 0.06); }
+.rule-row b { color: #fff; }
+.rule-ic {
+    flex: 0 0 26px;
+    font-size: 1.15rem;
+    text-align: center;
+    line-height: 1.5;
+}
+/* 吃子階級鏈 */
+.rank-ladder {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 10px 0 6px;
+}
+.rank-chip {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--piece-bg);
+    color: var(--red-piece);
+    font-family: var(--font-serif);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(255, 215, 0, 0.4);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+.rank-gt { color: #ffd700; font-weight: 700; }
+.rank-note {
+    font-size: 0.85rem;
+    color: #bbb;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin-top: 4px;
+}
+/* 技能卡網格 */
+.skill-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+.guide-card h3 { font-size: 1.3rem; }
+/* 示範動畫說明字幕 */
+.demo-caption {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #ffe9a8;
+    min-height: 2.6em;
+    line-height: 1.4;
+    margin-top: 2px;
+    transition: opacity 0.3s;
+}
+/* 示範棋子角色配色（覆寫舊版滑動行為） */
+.demo-piece {
+    transform: scale(0.84);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.45);
+    transition: left 0.9s ease, top 0.9s ease, opacity 0.5s ease;
+}
+.demo-piece.gold {
+    color: var(--red-piece);
+    border-color: #ffd700;
+    box-shadow: var(--gold-glow);
+}
+.demo-piece.enemy {
+    color: var(--black-piece);
+    border-color: #777;
+}
+.demo-piece.hurdle {
+    color: #888;
+    border-color: #888;
+    filter: grayscale(0.4);
+}
+
 /* 教學頁面手機適應 */
 @media (max-width: 600px) {
-    #guide-list { grid-template-columns: 1fr; }
+    .skill-grid { grid-template-columns: 1fr 1fr; }
     .guide-header h2 { font-size: 1.2rem; }
+    .guide-section { padding: 14px; }
 }
 
 .hidden { display: none !important; }
