@@ -16,6 +16,30 @@ const PIECE_TYPES = {
 const BOARD_ROWS = 8;
 const BOARD_COLS = 4;
 
+// AI 思考逾時的中斷信號（搭配迭代加深，時間到立刻回傳當前最佳解）
+const AI_TIMEOUT = 'AI_THINK_TIMEOUT';
+
+/**
+ * AI 難度設定表
+ * depth        : 主搜尋深度（legend 為迭代加深的上限）
+ * quiescence   : 葉節點是否進行靜態吃子搜尋（消除地平線效應）
+ * see          : 是否使用靜態交換評估（SEE）判斷兌子划不划算
+ * smartFlip    : 是否用「剩餘暗子期望值」評估翻棋（否則隨機翻）
+ * blunderRate  : 機率性失誤（模擬人類漏招），0 = 不失誤
+ * randomTemp   : 走法選擇的隨機溫度（softmax），數值越大越愛在相近走法間變化
+ * flipBias     : 翻棋傾向修正（正值愛翻、負值保守），單位為評估分數
+ * useTT        : 是否啟用置換表加速
+ * iterative    : 是否迭代加深（搭配 maxTime 控制不卡頓）
+ * maxTime      : 單步思考時間上限（毫秒），時間到立即回傳當前最佳解
+ */
+const AI_PROFILES = {
+    novice:  { name: '3歲小童', depth: 1, quiescence: false, see: false, smartFlip: false, blunderRate: 0.55, randomTemp: 240, flipBias: 25,  useTT: false, iterative: false, maxTime: 300 },
+    amateur: { name: '小學生',  depth: 2, quiescence: false, see: false, smartFlip: true,  blunderRate: 0.18, randomTemp: 90,  flipBias: 0,   useTT: false, iterative: false, maxTime: 500 },
+    pro:     { name: '樓下阿嬤', depth: 3, quiescence: true,  see: true,  smartFlip: true,  blunderRate: 0.05, randomTemp: 35,  flipBias: -5,  useTT: true,  iterative: false, maxTime: 900 },
+    god:     { name: '公園阿伯', depth: 4, quiescence: true,  see: true,  smartFlip: true,  blunderRate: 0.0,  randomTemp: 12,  flipBias: -10, useTT: true,  iterative: false, maxTime: 1300 },
+    legend:  { name: '國士無雙', depth: 6, quiescence: true,  see: true,  smartFlip: true,  blunderRate: 0.0,  randomTemp: 0,   flipBias: -15, useTT: true,  iterative: true,  maxTime: 1800 },
+};
+
 class Game {
     constructor() {
         this.board = []; // 32 slots
@@ -424,7 +448,7 @@ class Game {
     }
 
     getDiffName(diff) {
-        const names = { 'novice': '3歲小童', 'amateur': '小學生', 'pro': '樓下阿嬤', 'god': '公園阿伯' };
+        const names = { 'novice': '3歲小童', 'amateur': '小學生', 'pro': '樓下阿嬤', 'god': '公園阿伯', 'legend': '國士無雙' };
         return names[diff];
     }
 
@@ -504,7 +528,7 @@ class Game {
         this.saveHistory();
         const piece = this.board[index];
         piece.isFlipped = true;
-        this.addLog('flip', { pieceName: piece.type, index: index });
+        this.addLog('flip', { pieceName: piece.char, index: index });
 
         // 動態先手決定
         if (this.turn === 'none') {
@@ -785,7 +809,7 @@ class Game {
         if (piece.isUpgraded && piece.type === '帥' && Math.abs(r1 - r2) === 1 && Math.abs(c1 - c2) === 1) {
             piece.cooldown = 2; // 設定冷卻 2 (因為 endTurn 會立刻減 1)
         }
-        this.addLog('move', { pieceName: piece.type, from: from, to: to });
+        this.addLog('move', { pieceName: piece.char, from: from, to: to });
 
         this.board[to] = this.board[from];
         this.board[from] = null;
@@ -868,7 +892,7 @@ class Game {
     executeCapture(from, to) {
         const attacker = this.board[from];
         const victim = this.board[to];
-        this.addLog('capture', { attackerName: attacker.type, victimName: victim.type, from: from, to: to });
+        this.addLog('capture', { attackerName: attacker.char, victimName: victim.char, from: from, to: to });
 
         if (!attacker.isUpgraded) {
             attacker.isUpgraded = true;
@@ -935,7 +959,7 @@ class Game {
 
         const attacker = this.board[attackerIdx];
         const victim = this.board[victimIdx];
-        this.addLog('retreat', { pieceName: victim.type, to: targetIdx });
+        this.addLog('retreat', { pieceName: victim.char, to: targetIdx });
 
         // 1. 兵後退到逃脫格
         this.board[targetIdx] = victim;
@@ -1003,7 +1027,7 @@ class Game {
                     if (PIECE_TYPES[extraVictim.type].value < PIECE_TYPES['相'].value) {
                         this.captured[attacker.side].push(extraVictim);
                         this.board[trIdx] = null;
-                        this.addLog('capture', { attackerName: '相(重踏)', victimName: extraVictim.type, from: to, to: trIdx });
+                        this.addLog('capture', { attackerName: attacker.char + '(重踏)', victimName: extraVictim.char, from: to, to: trIdx });
                         trampleCount++;
                     }
                 }
@@ -1197,22 +1221,8 @@ class Game {
         if (this.isGameOver) return;
 
         try {
-            let bestMove = null;
-
-            switch (this.aiDifficulty) {
-                case 'novice':
-                    bestMove = this.getRandomMove();
-                    break;
-                case 'amateur':
-                    bestMove = this.getSmartMove(2);
-                    break;
-                case 'pro':
-                    bestMove = this.getSmartMove(4);
-                    break;
-                case 'god':
-                    bestMove = this.getSmartMove(5);
-                    break;
-            }
+            const profile = AI_PROFILES[this.aiDifficulty] || AI_PROFILES.amateur;
+            const bestMove = this.chooseAIMove(profile);
 
             if (bestMove) {
                 if (bestMove.type === 'flip') {
@@ -1231,83 +1241,173 @@ class Game {
         }
     }
 
-    getRandomMove() {
+    // ===================== AI 決策核心 =====================
+
+    // 統一決策入口：依 profile 在「走子」與「翻棋」間做出最像人的選擇
+    chooseAIMove(profile) {
         const moves = this.getAllValidMoves(this.aiSide);
         const unflipped = this.getUnflippedIndices();
-        // 新手也會優先吃子
-        const captures = moves.filter(m => this.board[m.to] !== null);
-        if (captures.length > 0 && Math.random() > 0.4) {
-            return { type: 'move', ...captures[Math.floor(Math.random() * captures.length)] };
+
+        // 完全沒棋可走：只能翻棋
+        if (moves.length === 0) {
+            return unflipped.length > 0 ? this.chooseFlip(profile, unflipped) : null;
         }
-        if (unflipped.length > 0 && Math.random() > 0.3) {
-            return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
-        }
-        if (moves.length > 0) {
-            return { type: 'move', ...moves[Math.floor(Math.random() * moves.length)] };
-        }
+
+        // 設定思考截止時間與置換表
+        this.aiDeadline = Date.now() + profile.maxTime;
+        this.tt = profile.useTT ? new Map() : null;
+
+        // 對所有合法走子做搜尋評分（迭代加深，受時間預算保護）
+        const scored = this.searchRoot(moves, profile);
+        let bestMoveScore = -Infinity;
+        for (const s of scored) if (s.score > bestMoveScore) bestMoveScore = s.score;
+
+        // 翻棋評估（與走子分數同尺度比較）
+        let flipOption = null;
         if (unflipped.length > 0) {
-            return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
+            flipOption = this.evaluateBestFlip(profile, unflipped);
         }
-        return null;
+
+        // 翻棋明顯較優 → 翻棋
+        if (flipOption && flipOption.score > bestMoveScore) {
+            return { type: 'flip', index: flipOption.index };
+        }
+
+        // 否則從走子中以「人味選步層」挑選（含隨機與失誤）
+        const picked = this.selectMoveWithStyle(scored, profile);
+        return { type: 'move', from: picked.from, to: picked.to };
     }
 
-    getSmartMove(depth) {
-        let bestScore = -Infinity;
-        let bestMove = null;
+    // 根節點搜尋：一律迭代加深，時間到即用上一層結果（保證不卡頓）
+    searchRoot(moves, profile) {
+        let ordered = this.orderMoves(moves, this.aiSide);
+        const maxDepth = Math.max(1, profile.depth);
+        const opp = this.opponentOf(this.aiSide);
+        let result = ordered.map(m => ({ from: m.from, to: m.to, score: 0 }));
 
-        const moves = this.getAllValidMoves(this.aiSide);
-        const unflipped = this.getUnflippedIndices();
+        for (let d = 1; d <= maxDepth; d++) {
+            const out = [];
+            let timedOut = false;
+            for (const m of ordered) {
+                const tok = this.aiSimMove(m.from, m.to);
+                let score;
+                try {
+                    score = -this.negamax(d - 1, -Infinity, Infinity, opp, profile);
+                } catch (e) {
+                    this.aiUndoMove(m.from, m.to, tok);
+                    if (e === AI_TIMEOUT) { timedOut = true; break; }
+                    throw e;
+                }
+                this.aiUndoMove(m.from, m.to, tok);
+                out.push({ from: m.from, to: m.to, score });
+            }
+            if (timedOut) break;           // 本層未完成，沿用上一層完整結果
+            result = out;
+            // 依分數重排，讓下一層先搜好棋，提升剪枝效率
+            result.sort((a, b) => b.score - a.score);
+            ordered = result.map(r => ({ from: r.from, to: r.to }));
+            if (Date.now() > this.aiDeadline) break;
+        }
+        return result;
+    }
 
-        // 如果完全沒棋可走，必翻棋
-        if (moves.length === 0 && unflipped.length > 0) {
-            return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
+    // 人味選步層：失誤 + softmax 加權隨機，避免每局重複、讓低階像人會犯錯
+    selectMoveWithStyle(scored, profile) {
+        if (scored.length === 1) return scored[0];
+
+        // 機率性失誤：忽略最佳解，從中後段的合理走法隨機挑（模擬漏招）
+        if (profile.blunderRate > 0 && Math.random() < profile.blunderRate) {
+            const sorted = [...scored].sort((a, b) => b.score - a.score);
+            const dropTop = Math.min(sorted.length - 1, Math.max(1, Math.floor(sorted.length * 0.25)));
+            const pool = sorted.slice(dropTop);
+            return pool[Math.floor(Math.random() * pool.length)];
         }
 
-        // 走法排序：優先評估吃子走法，提高 alpha-beta 剪枝效率
-        const sortedMoves = this.orderMoves(moves, this.aiSide);
-
-        // 評估所有走法
-        for (const move of sortedMoves) {
-            const captured = this.simulateCapture(move.from, move.to);
-            let score = this.minimax(depth - 1, -Infinity, Infinity, false);
-            this.undoSimulateCapture(move.from, move.to, captured);
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestMove = { type: 'move', ...move };
+        // softmax 加權隨機：溫度越高越愛在相近走法間變化
+        if (profile.randomTemp > 0) {
+            const maxS = Math.max(...scored.map(s => s.score));
+            let sum = 0;
+            const weights = scored.map(s => {
+                const w = Math.exp((s.score - maxS) / profile.randomTemp);
+                sum += w;
+                return w;
+            });
+            let r = Math.random() * sum;
+            for (let i = 0; i < scored.length; i++) {
+                r -= weights[i];
+                if (r <= 0) return scored[i];
             }
         }
 
-        // 翻棋決策 (更聰明)
-        if (unflipped.length > 0) {
-            // 計算我方已翻開棋子數
-            const myFlipped = this.board.filter(p => p && p.side === this.aiSide && p.isFlipped).length;
-            const enemyFlipped = this.board.filter(p => p && p.side === this.playerSide && p.isFlipped).length;
+        // 無隨機（國士無雙）：取嚴格最佳
+        let best = scored[0];
+        for (const s of scored) if (s.score > best.score) best = s;
+        return best;
+    }
 
-            // 情況1：沒有找到任何移動
-            if (!bestMove) {
-                return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
-            }
-
-            // 情況2：我方場上棋子太少，需要翻更多出來
-            if (myFlipped <= 2 && unflipped.length > 0) {
-                return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
-            }
-
-            // 情況3：目前最佳走法評分很低（被動局面），試試翻棋
-            const flipThreshold = -50;
-            if (bestScore < flipThreshold && unflipped.length >= 4) {
-                return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
-            }
+    // ---- 翻棋：以「剩餘暗子多重集合」的期望值公平評估（不偷看特定暗子身分） ----
+    evaluateBestFlip(profile, unflipped) {
+        if (!profile.smartFlip) {
+            // 不具智慧翻棋能力者：隨機翻棋，但仍套用階段獎勵與讓步代價（避免無腦翻棋）
+            const idx = unflipped[Math.floor(Math.random() * unflipped.length)];
+            return { index: idx, score: this.evaluateBoard() + profile.flipBias + this.flipStrategicBonus() - 35 };
         }
 
-        // 保底
-        if (!bestMove) {
-            if (unflipped.length > 0) return { type: 'flip', index: unflipped[0] };
-            if (moves.length > 0) return { type: 'move', ...moves[0] };
+        // 統計場上所有暗子的分布（此為公開可數資訊：總子數 − 已翻 − 已被吃）
+        const pool = this.getHiddenPool();
+        if (pool.length === 0) return null;
+        const counts = {};
+        for (const p of pool) {
+            const k = p.side + '|' + p.type;
+            if (!counts[k]) counts[k] = { count: 0, side: p.side, type: p.type };
+            counts[k].count++;
         }
+        const distinct = Object.values(counts);
+        const total = pool.length;
+        const TEMPO = 35;                       // 翻棋讓出一手的代價（靜態翻棋估值偏樂觀，需扣除）
+        const strategic = this.flipStrategicBonus();
 
-        return bestMove;
+        let best = null;
+        for (const tile of unflipped) {
+            const original = this.board[tile];
+            let ev = 0;
+            for (const d of distinct) {
+                // 在此格放一個假想的已翻棋子（依分布加權），評估盤面期望
+                this.board[tile] = { side: d.side, type: d.type, isFlipped: true, isUpgraded: false, cooldown: 0, id: -999, char: '' };
+                ev += this.evaluateBoard() * (d.count / total);
+            }
+            this.board[tile] = original;        // 還原真實暗子，絕不據此作弊
+            ev += profile.flipBias + strategic - TEMPO;
+            if (!best || ev > best.score) best = { index: tile, score: ev };
+        }
+        return best;
+    }
+
+    // 翻棋的策略性需求：依「遊戲階段（剩餘暗子數）」加分。
+    // 用暗子數（單調遞減）而非己方翻開數，避免棋子被吃光時陷入「無限翻棋」死循環。
+    flipStrategicBonus() {
+        const unflipped = this.getHiddenPool().length;
+        if (unflipped >= 24) return 60; // 開局：鼓勵翻棋發展
+        if (unflipped >= 16) return 30; // 前中盤：適度
+        if (unflipped >= 8) return 10;  // 中盤：少量
+        return 0;                       // 殘局：不再為翻棋加分，專心應戰
+    }
+
+    chooseFlip(profile, unflipped) {
+        if (profile.smartFlip) {
+            const best = this.evaluateBestFlip(profile, unflipped);
+            if (best) return { type: 'flip', index: best.index };
+        }
+        return { type: 'flip', index: unflipped[Math.floor(Math.random() * unflipped.length)] };
+    }
+
+    getHiddenPool() {
+        const pool = [];
+        for (let i = 0; i < 32; i++) {
+            const p = this.board[i];
+            if (p && !p.isFlipped) pool.push(p);
+        }
+        return pool;
     }
 
     // 走法排序：吃子 > 威脅 > 普通移動，大幅提升剪枝效率
@@ -1330,46 +1430,168 @@ class Game {
         }).sort((a, b) => b.priority - a.priority);
     }
 
-    minimax(depth, alpha, beta, isMaximizing) {
-        if (depth === 0) {
-            return this.evaluateBoard();
+    // 盤面評估（以 side 視角，正值代表對該方有利）
+    scoreForSide(side) {
+        return (side === this.aiSide ? 1 : -1) * this.evaluateBoard();
+    }
+
+    opponentOf(side) {
+        return side === 'red' ? 'black' : 'red';
+    }
+
+    // negamax + alpha-beta + 置換表 + 靜態吃子搜尋
+    negamax(depth, alpha, beta, side, profile) {
+        if (Date.now() > this.aiDeadline) throw AI_TIMEOUT;
+
+        const origAlpha = alpha;
+        const ttKey = profile.useTT ? (side + this.aiHash()) : null;
+        if (ttKey && this.tt.has(ttKey)) {
+            const e = this.tt.get(ttKey);
+            if (e.depth >= depth) {
+                if (e.flag === 0) return e.value;                    // 精確值
+                else if (e.flag === 1 && e.value > alpha) alpha = e.value; // 下界
+                else if (e.flag === -1 && e.value < beta) beta = e.value;  // 上界
+                if (alpha >= beta) return e.value;
+            }
         }
 
-        const side = isMaximizing ? this.aiSide : this.playerSide;
-        const moves = this.getAllValidMoves(side);
+        if (depth <= 0) {
+            return profile.quiescence
+                ? this.quiescence(alpha, beta, side, profile)
+                : this.scoreForSide(side);
+        }
 
-        // 無棋可走 = 極端劣勢
+        const moves = this.genSearchMoves(side);
         if (moves.length === 0) {
-            const myPieces = this.board.filter(p => p && p.side === side && p.isFlipped).length;
-            return isMaximizing ? (myPieces === 0 ? -99999 : this.evaluateBoard()) : (myPieces === 0 ? 99999 : this.evaluateBoard());
+            // 無子可動：若已無己方翻開棋子→慘敗；否則靜態評估（仍可能有暗子）
+            const myFlipped = this.board.filter(p => p && p.side === side && p.isFlipped).length;
+            return myFlipped === 0 ? -90000 - depth : this.scoreForSide(side);
         }
 
-        // 走法排序
-        const sortedMoves = this.orderMoves(moves, side);
-
-        if (isMaximizing) {
-            let maxEval = -Infinity;
-            for (let move of sortedMoves) {
-                const captured = this.simulateCapture(move.from, move.to);
-                let evaluation = this.minimax(depth - 1, alpha, beta, false);
-                this.undoSimulateCapture(move.from, move.to, captured);
-                maxEval = Math.max(maxEval, evaluation);
-                alpha = Math.max(alpha, evaluation);
-                if (beta <= alpha) break;
+        const ordered = this.orderMoves(moves, side);
+        const opp = this.opponentOf(side);
+        let best = -Infinity;
+        for (const m of ordered) {
+            const tok = this.aiSimMove(m.from, m.to);
+            let val;
+            try {
+                val = -this.negamax(depth - 1, -beta, -alpha, opp, profile);
+            } catch (e) {
+                this.aiUndoMove(m.from, m.to, tok);
+                throw e;
             }
-            return maxEval;
-        } else {
-            let minEval = Infinity;
-            for (let move of sortedMoves) {
-                const captured = this.simulateCapture(move.from, move.to);
-                let evaluation = this.minimax(depth - 1, alpha, beta, true);
-                this.undoSimulateCapture(move.from, move.to, captured);
-                minEval = Math.min(minEval, evaluation);
-                beta = Math.min(beta, evaluation);
-                if (beta <= alpha) break;
-            }
-            return minEval;
+            this.aiUndoMove(m.from, m.to, tok);
+            if (val > best) best = val;
+            if (val > alpha) alpha = val;
+            if (alpha >= beta) break;          // beta 剪枝
         }
+
+        if (ttKey) {
+            const flag = best <= origAlpha ? -1 : (best >= beta ? 1 : 0);
+            this.tt.set(ttKey, { depth, value: best, flag });
+        }
+        return best;
+    }
+
+    // 靜態吃子搜尋：把連續吃子算到穩定，消除地平線效應
+    quiescence(alpha, beta, side, profile) {
+        if (Date.now() > this.aiDeadline) throw AI_TIMEOUT;
+
+        const standPat = this.scoreForSide(side);
+        if (standPat >= beta) return beta;
+        if (standPat > alpha) alpha = standPat;
+
+        const caps = this.orderMoves(this.genCaptureMoves(side), side);
+        const opp = this.opponentOf(side);
+        for (const m of caps) {
+            if (profile.see && this.seeCapture(m.from, m.to) < 0) continue; // 略過虧本兌子
+            const tok = this.aiSimMove(m.from, m.to);
+            let val;
+            try {
+                val = -this.quiescence(-beta, -alpha, opp, profile);
+            } catch (e) {
+                this.aiUndoMove(m.from, m.to, tok);
+                throw e;
+            }
+            this.aiUndoMove(m.from, m.to, tok);
+            if (val >= beta) return beta;
+            if (val > alpha) alpha = val;
+        }
+        return alpha;
+    }
+
+    // 搜尋用走法生成（不做禁手過濾，提升深層搜尋效率）
+    genSearchMoves(side) {
+        const moves = [];
+        for (let i = 0; i < 32; i++) {
+            const p = this.board[i];
+            if (p && p.side === side && p.isFlipped) {
+                for (let j = 0; j < 32; j++) {
+                    if (this.tryMovePreview(i, j)) moves.push({ from: i, to: j });
+                }
+            }
+        }
+        return moves;
+    }
+
+    // 只生成吃子走法（供 quiescence 使用）
+    genCaptureMoves(side) {
+        const moves = [];
+        for (let i = 0; i < 32; i++) {
+            const p = this.board[i];
+            if (p && p.side === side && p.isFlipped) {
+                for (let j = 0; j < 32; j++) {
+                    if (this.board[j] && this.tryMovePreview(i, j)) moves.push({ from: i, to: j });
+                }
+            }
+        }
+        return moves;
+    }
+
+    // 靜態交換評估（SEE）：from→to 這次吃子的淨物質收益
+    seeCapture(from, to) {
+        const victim = this.board[to];
+        if (!victim) return 0;
+        const gain = PIECE_TYPES[victim.type].value;
+        const tok = this.aiSimMove(from, to);
+        const ret = gain - this.seeAt(to, this.opponentOf(this.board[to].side));
+        this.aiUndoMove(from, to, tok);
+        return ret;
+    }
+
+    // 遞迴計算某格被反覆吃子後，sideToMove 方能取得的淨值
+    seeAt(to, sideToMove) {
+        const attackerIdx = this.leastValuableAttacker(to, sideToMove);
+        if (attackerIdx === -1) return 0;
+        const victimVal = PIECE_TYPES[this.board[to].type].value;
+        const tok = this.aiSimMove(attackerIdx, to);
+        const ret = Math.max(0, victimVal - this.seeAt(to, this.opponentOf(sideToMove)));
+        this.aiUndoMove(attackerIdx, to, tok);
+        return ret;
+    }
+
+    // 找出能吃掉 to 格、且本身價值最低的攻擊者（SEE 用）
+    leastValuableAttacker(to, side) {
+        let bestIdx = -1, bestVal = Infinity;
+        for (let i = 0; i < 32; i++) {
+            const p = this.board[i];
+            if (p && p.side === side && p.isFlipped && this.canCapture(i, to)) {
+                const v = PIECE_TYPES[p.type].value;
+                if (v < bestVal) { bestVal = v; bestIdx = i; }
+            }
+        }
+        return bestIdx;
+    }
+
+    // 含升級狀態的盤面雜湊（置換表用，補足 hashBoard 未含的升級資訊）
+    aiHash() {
+        let s = '';
+        for (let i = 0; i < 32; i++) {
+            const p = this.board[i];
+            if (!p) { s += '.'; continue; }
+            s += (p.side === 'red' ? 'r' : 'b') + p.type + (p.isFlipped ? (p.isUpgraded ? 'U' : 'f') : 'd');
+        }
+        return s;
     }
 
     evaluateBoard() {
@@ -1518,17 +1740,23 @@ class Game {
     }
 
     // 模擬吃子（回傳被吃掉的棋子以便還原）
-    simulateCapture(from, to) {
+    // 升級感知的模擬移動：吃子時會讓攻擊方升級（與真實規則一致）
+    aiSimMove(from, to) {
         const captured = this.board[to];
-        this.board[to] = this.board[from];
+        const attacker = this.board[from];
+        const prevUpgraded = attacker.isUpgraded;
+        if (captured && !attacker.isUpgraded) attacker.isUpgraded = true; // 吃子即升級
+        this.board[to] = attacker;
         this.board[from] = null;
-        return captured;
+        return { captured, prevUpgraded };
     }
 
-    // 還原模擬吃子
-    undoSimulateCapture(from, to, captured) {
-        this.board[from] = this.board[to];
-        this.board[to] = captured;
+    // 還原升級感知的模擬移動
+    aiUndoMove(from, to, tok) {
+        const attacker = this.board[to];
+        if (attacker) attacker.isUpgraded = tok.prevUpgraded;
+        this.board[from] = attacker;
+        this.board[to] = tok.captured;
     }
 
     // 走法生成
