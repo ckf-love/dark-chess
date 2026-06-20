@@ -95,9 +95,9 @@ body {
 
 /* 品牌 Logo 圖片 - 響應式設計 */
 .hero-logo {
-    width: clamp(200px, 80vw, 500px);
+    width: 100%;
+    max-width: 500px;
     height: auto;
-    max-width: 100%;
     object-fit: contain;
     display: block;
     margin: 0 auto;
