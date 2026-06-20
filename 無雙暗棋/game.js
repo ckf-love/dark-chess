@@ -1902,8 +1902,8 @@ class Game {
                 { caption: '轟！砲越子擊殺並移動到該格', hold: 1700, effect: 'shake', pieces: [P('h', 8, 'gold', '砲'), P('m', 7, 'hurdle', '兵')] },
             ]},
             { id: 'demo-兵', steps: [
-                { caption: '兩隻兵卒貼住目標即可埋伏（無需升級）', hold: 1600, pieces: [P('v', 4, 'enemy', '帥'), P('a', 1, 'ally', '兵'), P('h', 3, 'ally', '兵')] },
-                { caption: '埋伏！越級吃下被包圍的敵帥', hold: 1800, pieces: [P('h', 4, 'ally', '兵'), P('a', 1, 'ally', '兵')] },
+                { caption: '兩隻兵卒貼住目標即可埋伏（無需升級）', hold: 1600, pieces: [P('v', 4, 'enemy', '士'), P('a', 1, 'ally', '兵'), P('h', 3, 'ally', '兵')] },
+                { caption: '埋伏！越級吃下被包圍的敵士', hold: 1800, pieces: [P('h', 4, 'ally', '兵'), P('a', 1, 'ally', '兵')] },
             ]},
             { id: 'demo-撤退', steps: [
                 { caption: '升級的兵遭攻擊，不會立刻陣亡', hold: 1500, pieces: [P('e', 3, 'enemy', '俥'), P('h', 4, 'gold', '兵')] },
