@@ -50,8 +50,8 @@ const AI_PROFILES = {
  *     - Project API keys 的 anon public → 填 SUPABASE_ANON_KEY
  * anon key 可以公開（安全性由資料庫的 RLS + 函式把關，碼不會外洩）。
  * ========================================================================= */
-const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co'; // ← 換成你的 Project URL
-const SUPABASE_ANON_KEY = 'YOUR_ANON_PUBLIC_KEY';           // ← 換成你的 anon public key
+const SUPABASE_URL = 'https://kvpcxibsdjzzdaefvakc.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_gAX8tnnQaS8ExPZj3VE5Rw_4is_ZOVe';
 
 // 是否已正確填入設定（未填時讓開發中可繞過，避免本機完全進不去）
 function isGateConfigured() {
