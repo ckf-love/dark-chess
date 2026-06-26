@@ -12,8 +12,27 @@
 
 <body>
     <div id="app">
+        <!-- 測試碼輸入頁（進入遊戲前的驗證關卡） -->
+        <section id="gate-page">
+            <div class="start-backdrop"></div>
+            <header class="hero-header">
+                <div class="hero-title">
+                    <img src="pic/main.png" alt="國士無雙之暗棋" class="hero-logo">
+                </div>
+                <p class="hero-subtitle">請輸入測試碼</p>
+            </header>
+            <div class="gate-box">
+                <input id="gate-code-input" class="gate-input" type="text" inputmode="latin"
+                    maxlength="12" placeholder="輸入測試碼" autocomplete="off" autocapitalize="characters"
+                    spellcheck="false">
+                <div id="gate-message" class="gate-message"></div>
+                <button id="gate-submit-btn" class="btn menu-btn primary">確認進入</button>
+            </div>
+            <div class="version-text">V 2.2</div>
+        </section>
+
         <!-- 起始頁面 -->
-        <section id="start-page">
+        <section id="start-page" class="hidden">
             <div class="start-backdrop"></div>
             <header class="hero-header">
                 <div class="hero-title">
@@ -29,7 +48,7 @@
             </div>
             <!-- 版本號顯示 -->
             <div id="version-display" style="margin-top: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.4); letter-spacing: 2px;">
-                V 2.1
+                V 2.2
             </div>
         </section>
 
@@ -38,6 +57,7 @@
             <div class="sandbox-header">
                 <button id="back-from-sandbox" class="btn secondary">← 返回主選單</button>
                 <h2>🧪 自訂測試棋盤</h2>
+                <button id="open-codes-admin" class="btn secondary">🔑 測試碼管理</button>
                 <button id="clear-sandbox" class="btn secondary">清空棋盤</button>
             </div>
             <div class="sandbox-layout">
@@ -69,6 +89,57 @@
                     </div>
                 </div>
                 <div id="sandbox-board" class="board"></div>
+            </div>
+        </section>
+
+        <!-- 測試碼管理頁面 (測試模式內，預設隱藏) -->
+        <section id="codes-admin-page" class="hidden">
+            <div class="sandbox-header">
+                <button id="back-from-admin" class="btn secondary">← 返回測試模式</button>
+                <h2>🔑 測試碼管理</h2>
+                <button id="admin-refresh" class="btn secondary hidden">🔄 重新整理</button>
+            </div>
+
+            <!-- 驗證關卡：需輸入目前測試員密碼 -->
+            <div id="admin-auth" class="admin-panel">
+                <label>請輸入目前的測試員密碼以檢視管理資料</label>
+                <div class="admin-row">
+                    <input id="admin-auth-input" class="gate-input" type="text" placeholder="測試員密碼"
+                        autocomplete="off" autocapitalize="characters" spellcheck="false">
+                    <button id="admin-auth-btn" class="btn primary">解鎖</button>
+                </div>
+                <div id="admin-auth-msg" class="gate-message"></div>
+            </div>
+
+            <!-- 管理內容（解鎖後顯示） -->
+            <div id="admin-content" class="hidden">
+                <div class="admin-panel">
+                    <label>測試員密碼（可直接修改更換，全域即時生效）</label>
+                    <div class="admin-row">
+                        <input id="tester-pw-input" class="gate-input" type="text"
+                            autocomplete="off" autocapitalize="characters" spellcheck="false">
+                        <button id="tester-pw-save" class="btn primary">更新密碼</button>
+                    </div>
+                    <div id="tester-pw-msg" class="gate-message"></div>
+                </div>
+
+                <div class="admin-stats" id="admin-stats"></div>
+
+                <div class="admin-table-wrap">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>測試碼</th>
+                                <th>狀態</th>
+                                <th>綁定設備</th>
+                                <th>綁定時間</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-codes-body"></tbody>
+                    </table>
+                </div>
             </div>
         </section>
 

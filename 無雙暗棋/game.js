@@ -40,6 +40,58 @@ const AI_PROFILES = {
     legend:  { name: '國士無雙', depth: 6, quiescence: true,  see: true,  smartFlip: true,  blunderRate: 0.0,  randomTemp: 0,   flipBias: -15, useTT: true,  iterative: true,  maxTime: 1800 },
 };
 
+/* =========================================================================
+ * 測試碼 / 設備綁定系統設定
+ * -------------------------------------------------------------------------
+ * 遊戲檔案放在 GitHub，碼與綁定紀錄放在 Supabase 免費資料庫。
+ * 下面兩個值請填入你的 Supabase 專案資訊：
+ *   Supabase 後台 → Project Settings → API
+ *     - Project URL        → 填 SUPABASE_URL
+ *     - Project API keys 的 anon public → 填 SUPABASE_ANON_KEY
+ * anon key 可以公開（安全性由資料庫的 RLS + 函式把關，碼不會外洩）。
+ * ========================================================================= */
+const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co'; // ← 換成你的 Project URL
+const SUPABASE_ANON_KEY = 'YOUR_ANON_PUBLIC_KEY';           // ← 換成你的 anon public key
+
+// 是否已正確填入設定（未填時讓開發中可繞過，避免本機完全進不去）
+function isGateConfigured() {
+    return SUPABASE_URL.indexOf('YOUR_PROJECT_ID') === -1 &&
+           SUPABASE_ANON_KEY.indexOf('YOUR_ANON') === -1 &&
+           SUPABASE_URL.startsWith('http');
+}
+
+// 取得 / 產生這台設備的唯一識別碼（存在本機 localStorage）
+function getDeviceId() {
+    let id = null;
+    try { id = localStorage.getItem('dc_device_id'); } catch (e) { /* 隱私模式可能拋錯 */ }
+    if (!id) {
+        if (window.crypto && crypto.randomUUID) {
+            id = crypto.randomUUID();
+        } else {
+            id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+        }
+        try { localStorage.setItem('dc_device_id', id); } catch (e) { /* 忽略 */ }
+    }
+    return id;
+}
+
+// 呼叫 Supabase 的 RPC 函式（POST /rest/v1/rpc/<fn>）
+async function callRpc(fn, params) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+        method: 'POST',
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(params || {})
+    });
+    if (!res.ok) {
+        throw new Error('RPC ' + fn + ' failed: ' + res.status);
+    }
+    return res.json();
+}
+
 class Game {
     constructor() {
         this.board = []; // 32 slots
@@ -74,11 +126,14 @@ class Game {
         this.setupEventListeners();
         this.initMenuListeners();
         this.initExportListener();
+        this.initGate();
+        this.initCodesAdmin();
         this.updateStatus();
+        this.runEntryCheck();
     }
 
     showPage(pageId) {
-        const pages = ['start-page', 'sandbox-page', 'guide-page', 'main-game'];
+        const pages = ['gate-page', 'start-page', 'sandbox-page', 'codes-admin-page', 'guide-page', 'main-game'];
         pages.forEach(id => {
             const el = document.getElementById(id);
             if (el) {
@@ -1000,6 +1055,285 @@ class Game {
         toast.style.opacity = '1';
         clearTimeout(this._toastTimer);
         this._toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+    }
+
+    /* ===================== 測試碼 / 設備綁定：進入流程 ===================== */
+
+    escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, ch => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+        ));
+    }
+
+    enterHome() {
+        this.showPage('start-page');
+    }
+
+    initGate() {
+        const input = document.getElementById('gate-code-input');
+        const btn = document.getElementById('gate-submit-btn');
+        if (!input || !btn) return;
+
+        // 僅允許英數，並自動轉大寫
+        input.addEventListener('input', () => {
+            const cleaned = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (cleaned !== input.value) input.value = cleaned;
+        });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); this.submitGate(); }
+        });
+        btn.addEventListener('click', () => this.submitGate());
+    }
+
+    // 載入時：有本機紀錄就跟雲端重新核對，否則停在輸入頁
+    async runEntryCheck() {
+        this.showPage('gate-page');
+        const input = document.getElementById('gate-code-input');
+        const msg = document.getElementById('gate-message');
+
+        // 尚未設定 Supabase（本機開發）：直接進入，避免完全卡死
+        if (!isGateConfigured()) {
+            msg.className = 'gate-message info';
+            msg.textContent = '⚙️ 尚未設定 Supabase，開發模式直接進入';
+            setTimeout(() => this.enterHome(), 700);
+            return;
+        }
+
+        let saved = null;
+        try { saved = localStorage.getItem('dc_saved_code'); } catch (e) { /* 忽略 */ }
+        if (!saved) return; // 無紀錄 → 等待手動輸入
+
+        msg.className = 'gate-message info';
+        msg.textContent = '驗證中…';
+        if (input) input.value = saved;
+        try {
+            const r = await callRpc('redeem_code', { p_code: saved, p_device: getDeviceId() });
+            const status = r && r.status;
+            if (status === 'tester' || status === 'ok') {
+                msg.textContent = '';
+                this.enterHome();
+            } else {
+                // 綁定失效 / 碼被移除 / 改綁他機 → 清除本機紀錄，回到輸入頁
+                try { localStorage.removeItem('dc_saved_code'); localStorage.removeItem('dc_tester'); } catch (e) {}
+                if (input) input.value = '';
+                msg.className = 'gate-message';
+                msg.textContent = (status === 'device_mismatch')
+                    ? '此測試碼已綁定其他設備，請重新輸入'
+                    : '';
+            }
+        } catch (e) {
+            msg.className = 'gate-message';
+            msg.textContent = '⚠️ 無法連線驗證，請檢查網路後重試';
+        }
+    }
+
+    async submitGate() {
+        const input = document.getElementById('gate-code-input');
+        const msg = document.getElementById('gate-message');
+        const btn = document.getElementById('gate-submit-btn');
+        const raw = (input.value || '').trim().toUpperCase();
+
+        if (!raw) {
+            msg.className = 'gate-message';
+            msg.textContent = '請先輸入測試碼';
+            return;
+        }
+        if (!isGateConfigured()) { this.enterHome(); return; }
+
+        btn.disabled = true;
+        msg.className = 'gate-message info';
+        msg.textContent = '驗證中…';
+        try {
+            const r = await callRpc('redeem_code', { p_code: raw, p_device: getDeviceId() });
+            const status = r && r.status;
+            if (status === 'tester' || status === 'ok') {
+                try {
+                    localStorage.setItem('dc_saved_code', raw);
+                    if (status === 'tester') localStorage.setItem('dc_tester', '1');
+                    else localStorage.removeItem('dc_tester');
+                } catch (e) { /* 忽略 */ }
+                msg.className = 'gate-message success';
+                msg.textContent = (status === 'tester') ? '測試員通過，進入遊戲…' : '驗證成功，進入遊戲…';
+                setTimeout(() => this.enterHome(), 400);
+            } else if (status === 'device_mismatch') {
+                msg.className = 'gate-message';
+                msg.textContent = '❌ 此測試碼已綁定其他設備，無法在此裝置使用';
+            } else if (status === 'invalid') {
+                msg.className = 'gate-message';
+                msg.textContent = '❌ 測試碼錯誤，請確認後再輸入';
+            } else {
+                msg.className = 'gate-message';
+                msg.textContent = '⚠️ 發生未知錯誤，請重試';
+            }
+        } catch (e) {
+            msg.className = 'gate-message';
+            msg.textContent = '⚠️ 連線失敗，請檢查網路後再試';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    /* ===================== 測試碼管理頁 ===================== */
+
+    initCodesAdmin() {
+        const openBtn = document.getElementById('open-codes-admin');
+        if (openBtn) openBtn.addEventListener('click', () => this.openCodesAdmin());
+
+        const backBtn = document.getElementById('back-from-admin');
+        if (backBtn) backBtn.addEventListener('click', () => this.showPage('sandbox-page'));
+
+        const authBtn = document.getElementById('admin-auth-btn');
+        if (authBtn) authBtn.addEventListener('click', () => this.adminAuth());
+        const authInput = document.getElementById('admin-auth-input');
+        if (authInput) authInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); this.adminAuth(); }
+        });
+
+        const refreshBtn = document.getElementById('admin-refresh');
+        if (refreshBtn) refreshBtn.addEventListener('click', () => this.loadAdminData());
+
+        const saveBtn = document.getElementById('tester-pw-save');
+        if (saveBtn) saveBtn.addEventListener('click', () => this.saveTesterPw());
+    }
+
+    openCodesAdmin() {
+        this.adminPassword = null;
+        document.getElementById('admin-auth').classList.remove('hidden');
+        document.getElementById('admin-content').classList.add('hidden');
+        document.getElementById('admin-refresh').classList.add('hidden');
+        const authInput = document.getElementById('admin-auth-input');
+        if (authInput) authInput.value = '';
+        const authMsg = document.getElementById('admin-auth-msg');
+        const pwMsg = document.getElementById('tester-pw-msg');
+        authMsg.className = 'gate-message';
+        authMsg.textContent = '';
+        pwMsg.textContent = '';
+        this.showPage('codes-admin-page');
+
+        if (!isGateConfigured()) {
+            authMsg.className = 'gate-message info';
+            authMsg.textContent = '⚙️ 尚未設定 Supabase，無法載入雲端資料';
+        }
+    }
+
+    async adminAuth() {
+        const input = document.getElementById('admin-auth-input');
+        const msg = document.getElementById('admin-auth-msg');
+        const pw = (input.value || '').trim();
+        if (!pw) { msg.className = 'gate-message'; msg.textContent = '請輸入測試員密碼'; return; }
+        if (!isGateConfigured()) { msg.className = 'gate-message'; msg.textContent = '⚙️ 尚未設定 Supabase'; return; }
+
+        msg.className = 'gate-message info';
+        msg.textContent = '驗證中…';
+        try {
+            const data = await callRpc('admin_data', { p_password: pw });
+            if (data && data.error) {
+                msg.className = 'gate-message';
+                msg.textContent = '❌ 密碼錯誤';
+                return;
+            }
+            this.adminPassword = pw;
+            msg.textContent = '';
+            document.getElementById('admin-auth').classList.add('hidden');
+            document.getElementById('admin-content').classList.remove('hidden');
+            document.getElementById('admin-refresh').classList.remove('hidden');
+            this.renderAdmin(data);
+        } catch (e) {
+            msg.className = 'gate-message';
+            msg.textContent = '⚠️ 連線失敗，請檢查網路';
+        }
+    }
+
+    async loadAdminData() {
+        if (!this.adminPassword) return;
+        try {
+            const data = await callRpc('admin_data', { p_password: this.adminPassword });
+            if (data && data.error) { this.openCodesAdmin(); return; }
+            this.renderAdmin(data);
+            this.showToast('已重新整理');
+        } catch (e) {
+            this.showToast('重新整理失敗，請檢查網路');
+        }
+    }
+
+    renderAdmin(data) {
+        const pwInput = document.getElementById('tester-pw-input');
+        if (pwInput) pwInput.value = (data && data.tester_password) || '';
+
+        const codes = (data && Array.isArray(data.codes)) ? data.codes : [];
+        const bound = codes.filter(c => c.device_id).length;
+
+        const stats = document.getElementById('admin-stats');
+        stats.innerHTML =
+            `<div class="admin-stat"><b>${codes.length}</b>測試碼總數</div>` +
+            `<div class="admin-stat"><b>${bound}</b>已綁定</div>` +
+            `<div class="admin-stat"><b>${codes.length - bound}</b>未使用</div>`;
+
+        const body = document.getElementById('admin-codes-body');
+        body.innerHTML = '';
+        codes.forEach((c, i) => {
+            const isBound = !!c.device_id;
+            const devFull = isBound ? this.escapeHtml(String(c.device_id)) : '';
+            const dev = isBound ? devFull.slice(0, 8) + '…' : '<span class="dim">—</span>';
+            const time = c.bound_at ? new Date(c.bound_at).toLocaleString('zh-TW') : '<span class="dim">—</span>';
+            const badge = isBound ? '<span class="badge bound">已綁定</span>' : '<span class="badge free">未使用</span>';
+            const action = isBound
+                ? `<button class="mini-btn" data-code="${this.escapeHtml(c.code)}">解除綁定</button>`
+                : '<span class="dim">—</span>';
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                `<td class="dim">${i + 1}</td>` +
+                `<td><code>${this.escapeHtml(c.code)}</code></td>` +
+                `<td>${badge}</td>` +
+                `<td title="${devFull}">${dev}</td>` +
+                `<td>${time}</td>` +
+                `<td>${action}</td>`;
+            body.appendChild(tr);
+        });
+
+        body.querySelectorAll('.mini-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.unbindCode(btn.dataset.code));
+        });
+    }
+
+    async saveTesterPw() {
+        const input = document.getElementById('tester-pw-input');
+        const msg = document.getElementById('tester-pw-msg');
+        const newPw = (input.value || '').trim();
+        if (!newPw) { msg.className = 'gate-message'; msg.textContent = '密碼不可為空'; return; }
+        if (!this.adminPassword) return;
+        if (!confirm(`確定要將測試員密碼更新為「${newPw}」？\n更新後所有設備立即生效。`)) return;
+
+        msg.className = 'gate-message info';
+        msg.textContent = '更新中…';
+        try {
+            const r = await callRpc('admin_set_tester', { p_old: this.adminPassword, p_new: newPw });
+            if (r && r.error) {
+                msg.className = 'gate-message';
+                msg.textContent = (r.error === 'empty') ? '密碼不可為空' : '❌ 驗證失敗，請重新進入管理頁';
+                return;
+            }
+            // 更新成功 → 之後的操作改用新密碼驗證
+            this.adminPassword = r.tester_password || newPw;
+            msg.className = 'gate-message success';
+            msg.textContent = '✅ 已更新測試員密碼';
+        } catch (e) {
+            msg.className = 'gate-message';
+            msg.textContent = '⚠️ 連線失敗，請檢查網路';
+        }
+    }
+
+    async unbindCode(code) {
+        if (!code || !this.adminPassword) return;
+        if (!confirm(`確定要解除測試碼「${code}」的設備綁定？\n解除後該碼可重新在新設備上綁定。`)) return;
+        try {
+            const r = await callRpc('admin_unbind', { p_password: this.adminPassword, p_code: code });
+            if (r && r.error) { this.showToast('操作失敗，請重新進入管理頁'); return; }
+            this.showToast(`已解除 ${code} 的綁定`);
+            this.loadAdminData();
+        } catch (e) {
+            this.showToast('連線失敗，請檢查網路');
+        }
     }
 
     handleElephantTrample(from, to) {
