@@ -1069,6 +1069,22 @@ class Game {
         this.showPage('start-page');
     }
 
+    // 最終未通過（任何不符規則）一律顯示固定訊息，且不主動清除
+    setGateFail() {
+        const msg = document.getElementById('gate-message');
+        if (!msg) return;
+        msg.className = 'gate-message';
+        msg.textContent = '測試碼無法使用';
+    }
+
+    // 連線失敗例外訊息
+    setGateNetError() {
+        const msg = document.getElementById('gate-message');
+        if (!msg) return;
+        msg.className = 'gate-message';
+        msg.textContent = '連線失敗';
+    }
+
     initGate() {
         const input = document.getElementById('gate-code-input');
         const btn = document.getElementById('gate-submit-btn');
@@ -1113,17 +1129,14 @@ class Game {
                 msg.textContent = '';
                 this.enterHome();
             } else {
-                // 綁定失效 / 碼被移除 / 改綁他機 → 清除本機紀錄，回到輸入頁
+                // 已存的碼失效 / 改綁他機 → 清除本機紀錄，顯示固定訊息並保留
                 try { localStorage.removeItem('dc_saved_code'); localStorage.removeItem('dc_tester'); } catch (e) {}
                 if (input) input.value = '';
-                msg.className = 'gate-message';
-                msg.textContent = (status === 'device_mismatch')
-                    ? '此測試碼已綁定其他設備，請重新輸入'
-                    : '';
+                this.setGateFail();
             }
         } catch (e) {
-            msg.className = 'gate-message';
-            msg.textContent = '⚠️ 無法連線驗證，請檢查網路後重試';
+            // 連線失敗例外：保留已存的碼供重試，僅提示連線失敗
+            this.setGateNetError();
         }
     }
 
@@ -1133,11 +1146,7 @@ class Game {
         const btn = document.getElementById('gate-submit-btn');
         const raw = (input.value || '').trim().toUpperCase();
 
-        if (!raw) {
-            msg.className = 'gate-message';
-            msg.textContent = '請先輸入測試碼';
-            return;
-        }
+        if (!raw) { this.setGateFail(); return; }
         if (!isGateConfigured()) { this.enterHome(); return; }
 
         btn.disabled = true;
@@ -1155,19 +1164,13 @@ class Game {
                 msg.className = 'gate-message success';
                 msg.textContent = (status === 'tester') ? '測試員通過，進入遊戲…' : '驗證成功，進入遊戲…';
                 setTimeout(() => this.enterHome(), 400);
-            } else if (status === 'device_mismatch') {
-                msg.className = 'gate-message';
-                msg.textContent = '❌ 此測試碼已綁定其他設備，無法在此裝置使用';
-            } else if (status === 'invalid') {
-                msg.className = 'gate-message';
-                msg.textContent = '❌ 測試碼錯誤，請確認後再輸入';
             } else {
-                msg.className = 'gate-message';
-                msg.textContent = '⚠️ 發生未知錯誤，請重試';
+                // 最終未通過（碼錯誤 / 已綁他機 / 未知結果）一律顯示固定訊息並持續保留
+                this.setGateFail();
             }
         } catch (e) {
-            msg.className = 'gate-message';
-            msg.textContent = '⚠️ 連線失敗，請檢查網路後再試';
+            // 連線失敗例外：顯示「連線失敗」
+            this.setGateNetError();
         } finally {
             btn.disabled = false;
         }
@@ -1283,7 +1286,7 @@ class Game {
             const tr = document.createElement('tr');
             tr.innerHTML =
                 `<td class="dim">${i + 1}</td>` +
-                `<td><code>${this.escapeHtml(c.code)}</code></td>` +
+                `<td><code class="copyable" data-copy="${this.escapeHtml(c.code)}" title="點擊複製">${this.escapeHtml(c.code)}</code></td>` +
                 `<td>${badge}</td>` +
                 `<td title="${devFull}">${dev}</td>` +
                 `<td>${time}</td>` +
@@ -1294,6 +1297,42 @@ class Game {
         body.querySelectorAll('.mini-btn').forEach(btn => {
             btn.addEventListener('click', () => this.unbindCode(btn.dataset.code));
         });
+        body.querySelectorAll('code.copyable').forEach(el => {
+            el.addEventListener('click', () => this.copyCode(el.dataset.copy));
+        });
+    }
+
+    // 點擊測試碼 → 複製到剪貼簿（可貼到記事本）
+    copyCode(text) {
+        if (!text) return;
+        const done = () => this.showToast('已複製：' + text);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(() => this.fallbackCopy(text, done));
+        } else {
+            this.fallbackCopy(text, done);
+        }
+    }
+
+    fallbackCopy(text, done) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            if (ok) {
+                if (done) done();
+            } else {
+                this.showToast('複製失敗，請手動選取');
+            }
+        } catch (e) {
+            this.showToast('複製失敗，請手動選取');
+        }
     }
 
     async saveTesterPw() {

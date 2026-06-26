@@ -1099,6 +1099,15 @@ input:checked + .toggle-slider:before { transform: translateX(24px); }
     color: #fff;
     font-size: 0.95rem;
 }
+.admin-table code.copyable {
+    cursor: pointer;
+    transition: color 0.15s;
+}
+.admin-table code.copyable:hover {
+    color: #ffd700;
+    text-decoration: underline;
+}
+.admin-table code.copyable:active { color: #4ade80; }
 .admin-table .dim { color: #777; }
 .badge {
     padding: 2px 10px;
